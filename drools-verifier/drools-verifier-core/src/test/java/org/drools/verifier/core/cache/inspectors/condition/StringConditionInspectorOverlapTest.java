@@ -16,7 +16,7 @@
 
 package org.drools.verifier.core.cache.inspectors.condition;
 
-import org.drools.verifier.core.checks.AnalyzerConfigurationMock;
+import org.drools.verifier.core.AnalyzerConfigurationMock;
 import org.drools.verifier.core.index.keys.Values;
 import org.drools.verifier.core.index.model.Column;
 import org.drools.verifier.core.index.model.Field;
@@ -24,7 +24,7 @@ import org.drools.verifier.core.index.model.FieldCondition;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.MockitoJUnitRunner;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;

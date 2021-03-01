@@ -21,9 +21,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.drools.modelcompiler.domain.Address;
 import org.drools.modelcompiler.domain.Person;
+import org.drools.modelcompiler.domain.Pet;
 import org.drools.modelcompiler.domain.Result;
 import org.junit.Test;
+import org.kie.api.definition.type.Modifies;
 import org.kie.api.runtime.KieSession;
 import org.kie.api.runtime.rule.FactHandle;
 
@@ -58,6 +61,68 @@ public class PropertyReactivityTest extends BaseModelTest {
     }
 
     @Test
+    public void testPropertyReactivityWithUpdate() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( name == \"Mario\" )\n" +
+                "then\n" +
+                "    $p.setAge( $p.getAge()+1 );\n" +
+                "    update($p);\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules();
+
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testPropertyReactivityMvel() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R dialect\"mvel\" when\n" +
+                "    $p : Person( name == \"Mario\" )\n" +
+                "then\n" +
+                "    modify($p) { age = $p.age+1 };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules();
+
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testPropertyReactivityMvelWithUpdate() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R dialect\"mvel\" when\n" +
+                "    $p : Person( name == \"Mario\" )\n" +
+                "then\n" +
+                "    $p.age = $p.age+1;\n" +
+                "    update($p);\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules();
+
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
     public void testWatch() {
         final String str =
                 "import " + Person.class.getCanonicalName() + ";\n" +
@@ -75,6 +140,79 @@ public class PropertyReactivityTest extends BaseModelTest {
         ksession.fireAllRules();
 
         assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testWatchAll() {
+        // DROOLS-4509
+
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( name == \"Mario\" ) @watch(*)\n" +
+                "then\n" +
+                "    modify($p) { setAge( $p.getAge()+1 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(10);
+
+        assertEquals(50, p.getAge());
+    }
+
+    @Test
+    public void testWatchAllBeforeBeta() {
+        // DROOLS-4509
+
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "import " + Address.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( name == \"Mario\" ) @watch(*)\n" +
+                "    Address() \n" +
+                "then\n" +
+                "    modify($p) { setAge( $p.getAge()+1 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.insert( new Address( "Milan" ) );
+        ksession.fireAllRules(10);
+
+        assertEquals(50, p.getAge());
+    }
+
+    @Test
+    public void testWatchAllBeforeFrom() {
+        // DROOLS-4509
+
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "import " + Address.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( name == \"Mario\" ) @watch(*)\n" +
+                "    Address() from $p.addresses\n" +
+                "then\n" +
+                "    modify($p) { setAge( $p.getAge()+1 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        p.addAddress( new Address( "Milan" ) );
+        p.addAddress( new Address( "Rome" ) );
+        ksession.insert( p );
+        ksession.fireAllRules(10);
+
+        assertEquals(50, p.getAge());
     }
 
     @Test
@@ -351,5 +489,843 @@ public class PropertyReactivityTest extends BaseModelTest {
 
         assertEquals( 41, p.getAge() );
         assertTrue( p.getEmployed() );
+    }
+
+    @Test
+    public void testReassignment() {
+        // DROOLS-4884
+        final String str =
+                "package com.example\n" +
+                "\n" +
+                "declare Counter\n" +
+                "    value1: int\n" +
+                "    value2: int\n" +
+                "end\n" +
+                "\n" +
+                "rule \"Init\" when\n" +
+                "    not Counter()\n" +
+                "then\n" +
+                "    drools.insert(new Counter(0, 0));\n" +
+                "end\n" +
+                "\n" +
+                "rule \"Loop\"\n" +
+                "when\n" +
+                "    $c: Counter( value1 == 0 )\n" +
+                "then\n" +
+                "    $c = new Counter(0, 0);\n" +
+                "    $c.setValue2(1);\n" +
+                "    update($c);\n" +
+                "end\n\n";
+
+        KieSession ksession = getKieSession( str );
+
+        assertEquals( 5, ksession.fireAllRules(5) );
+    }
+
+    @Test
+    public void testReassignment2() {
+        // DROOLS-4884
+        final String str =
+                "package com.example\n" +
+                "\n" +
+                "declare Counter\n" +
+                "    value1: int\n" +
+                "    value2: int\n" +
+                "end\n" +
+                "\n" +
+                "rule \"Init\" when\n" +
+                "    not Counter()\n" +
+                "then\n" +
+                "    drools.insert(new Counter(0, 0));\n" +
+                "end\n" +
+                "\n" +
+                "rule \"Loop\"\n" +
+                "when\n" +
+                "    $c: Counter( value1 == 0 )\n" +
+                "then\n" +
+                "    $c = new Counter(0, 0);\n" +
+                "    $c.setValue1(1);\n" +
+                "    update($c);\n" +
+                "end\n\n";
+
+        KieSession ksession = getKieSession( str );
+
+        assertEquals( 2, ksession.fireAllRules(5) );
+    }
+
+    @Test
+    public void testMultipleFieldUpdate() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R1 when\n" +
+                "    $p : Person( name == \"Mario\" )\n" +
+                "then\n" +
+                "    modify($p) { setAge( $p.getAge()+1 ), setLikes(\"Cheese\") };\n" +
+                "end\n" +
+                "rule R2 when\n" +
+                "    $p : Person( name == \"Mario\", likes == \"Cheese\" )\n" +
+                "then\n" +
+                "    modify($p) { setAge( $p.getAge()+1 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        p.setLikes("Beer");
+        ksession.insert( p );
+        ksession.fireAllRules();
+
+        assertEquals(42, p.getAge());
+    }
+
+    @Test
+    public void testComplexSetterArgument() {
+        String str =
+                "import " + Person.class.getCanonicalName() + ";" +
+                "rule R \n" +
+                "when\n" +
+                "    $p: Person(address.street == \"street1\")\n" +
+                "then\n" +
+                "    modify($p) { setLikes( String.valueOf(($p.getAddress().getStreet() + $p.getAddress().getCity()))) };\n" +
+                "end";
+
+        KieSession ksession = getKieSession( str );
+
+        Person me = new Person( "Mario", 40 );
+        me.setAddress(new Address("street1", 2, "city1"));
+        ksession.insert( me );
+
+        assertEquals(1, ksession.fireAllRules(10));
+
+        assertEquals( "street1city1", me.getLikes() );
+    }
+
+    @Test
+    public void testNestedPropInRHS() throws Exception {
+        // Property Reactivity for "owner"
+        final String str =
+                "package org.drools.test;\n" +
+                           "import " + Pet.class.getCanonicalName() + ";\n" +
+                           "rule R1\n" +
+                           "when \n" +
+                           "  $pet : Pet(age == 3)\n" +
+                           "then\n" +
+                           "  modify ($pet) { getOwner().setLikes(\"Cookie\") };\n" +
+                           "end\n" +
+                           "rule R2\n" +
+                           "when \n" +
+                           "  Pet(owner.likes == \"Cookie\")\n" +
+                           "then\n" +
+                           "end";
+
+        final KieSession ksession = getKieSession(str);
+
+        Pet pet = new Pet(Pet.PetType.cat);
+        Person person = new Person("John");
+        person.setLikes("Meat");
+        pet.setOwner(person);
+        pet.setAge(3);
+
+        ksession.insert(pet);
+        assertEquals(2, ksession.fireAllRules());
+    }
+
+    @Test
+    public void testDeeplyNestedPropInRHS() throws Exception {
+        // Property Reactivity for "owner"
+        final String str =
+                "package org.drools.test;\n" +
+                           "import " + Pet.class.getCanonicalName() + ";\n" +
+                           "rule R1\n" +
+                           "when \n" +
+                           "  $pet : Pet(age == 3)\n" +
+                           "then\n" +
+                           "  modify ($pet) { getOwner().getAddress().setStreet(\"XYZ street\") };\n" +
+                           "end\n" +
+                           "rule R2\n" +
+                           "when \n" +
+                           "  Pet(owner.address.street == \"XYZ street\")\n" +
+                           "then\n" +
+                           "end";
+
+        final KieSession ksession = getKieSession(str);
+
+        Pet pet = new Pet(Pet.PetType.cat);
+        Person person = new Person("John");
+        person.setAddress(new Address("ABC street"));
+        pet.setOwner(person);
+        pet.setAge(3);
+
+        ksession.insert(pet);
+        assertEquals(2, ksession.fireAllRules());
+    }
+
+    @Test
+    public void testOutsideModifyBlockWithGetterAsArgument() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                           "\n" +
+                           "rule R1 when\n" +
+                           "    $p : Person( name == \"Mario\" )\n" +
+                           "then\n" +
+                           "    System.out.println(\"name = \" + $p.getName());\n" +
+                           "    modify($p) { setAge(41) };\n" +
+                           "end\n";
+
+        final KieSession ksession = getKieSession(str);
+
+        Person p = new Person("Mario", 40);
+        ksession.insert(p);
+        int fired = ksession.fireAllRules(10);
+
+        assertEquals(1, fired);
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testOutsideModifyBlockWithNonGetterAsArgument() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                           "\n" +
+                           "rule R1 when\n" +
+                           "    $p : Person( name == \"Mario\" )\n" +
+                           "then\n" +
+                           "    System.out.println(\"name.length = \" + $p.getName().length());\n" +
+                           "    modify($p) { setAge(41) };\n" +
+                           "end\n";
+
+        final KieSession ksession = getKieSession(str);
+
+        Person p = new Person("Mario", 40);
+        ksession.insert(p);
+        int fired = ksession.fireAllRules(10);
+
+        assertEquals(1, fired);
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testMultipleModifyBlocksWithNonGetterAsArgument() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "import " + Address.class.getCanonicalName() + ";\n" +
+
+                           "\n" +
+                           "rule R1 when\n" +
+                           "    $p : Person( name == \"Mario\" )\n" +
+                           "    $a : Address( street == \"Street\" )\n" +
+                           "then\n" +
+                           "    System.out.println(\"name.length = \" + $p.getName().length());\n" +
+                           "    modify($p) { setAge(41) };\n" +
+                           "    System.out.println(\"street.length = \" + $a.getStreet().length());\n" +
+                           "    modify($a) { setNumber(20) };\n" +
+                           "end\n";
+
+        final KieSession ksession = getKieSession(str);
+
+        Person p = new Person("Mario", 40);
+        ksession.insert(p);
+
+        Address a = new Address("Street", 10, "City");
+        ksession.insert(a);
+
+        int fired = ksession.fireAllRules(10);
+
+        assertEquals(1, fired);
+        assertEquals(41, p.getAge());
+        assertEquals(20, a.getNumber());
+    }
+
+    @Test
+    public void testUpdateWithGetterAsArgument() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                           "\n" +
+                           "rule R1 when\n" +
+                           "    $p : Person( name == \"Mario\" )\n" +
+                           "then\n" +
+                           "    System.out.println(\"name = \" + $p.getName());\n" +
+                           "    $p.setAge(41);\n" +
+                           "    update($p);\n" +
+                           "end\n";
+
+        final KieSession ksession = getKieSession(str);
+
+        Person p = new Person("Mario", 40);
+        ksession.insert(p);
+        int fired = ksession.fireAllRules(10);
+
+        assertEquals(1, fired);
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testUpdateWithNonGetterAsArgument() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                           "\n" +
+                           "rule R1 when\n" +
+                           "    $p : Person( name == \"Mario\" )\n" +
+                           "then\n" +
+                           "    System.out.println(\"name.length = \" + $p.getName().length());\n" +
+                           "    $p.setAge(41);\n" +
+                           "    update($p);\n" +
+                           "end\n";
+
+        final KieSession ksession = getKieSession(str);
+
+        Person p = new Person("Mario", 40);
+        ksession.insert(p);
+        int fired = ksession.fireAllRules(10);
+
+        assertEquals(1, fired);
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testUpdateWithNonGetterAsDeclaration() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                           "\n" +
+                           "rule R1 when\n" +
+                           "    $p : Person( name == \"Mario\" )\n" +
+                           "then\n" +
+                           "    int length = $p.getName().length();\n" +
+                           "    System.out.println(\"length = \" + length);\n" +
+                           "    $p.setAge(41);\n" +
+                           "    update($p);\n" +
+                           "end\n";
+
+        final KieSession ksession = getKieSession(str);
+
+        Person p = new Person("Mario", 40);
+        ksession.insert(p);
+        int fired = ksession.fireAllRules(10);
+
+        assertEquals(1, fired);
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testUpdateWithNonGetterIntentinalLoop() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                           "\n" +
+                           "rule R1 when\n" +
+                           "    $p : Person( name == \"Mario\" )\n" +
+                           "then\n" +
+                           "    $p.getName().length();\n" +
+                           "    $p.setAge(41);\n" +
+                           "    update($p);\n" +
+                           "end\n";
+
+        final KieSession ksession = getKieSession(str);
+
+        Person p = new Person("Mario", 40);
+        ksession.insert(p);
+        int fired = ksession.fireAllRules(10);
+
+        // this is not likely an expected loop but standard-drl considers getter+otherMethod modifies the prop "name".
+        // anyway, such "read" method is not written like this (= without assigning to a variable or as an argument of other method)
+        // This test is to ensure the same behavior on stadard-drl and executable-model.
+        assertEquals(10, fired);
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testPropertyReactivityOnBoundVariable() {
+        // RHDM-1387
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( $n : name, $n == \"Mario\" )\n" +
+                "then\n" +
+                "    modify($p) { setAge( $p.getAge()+1 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(5);
+
+        assertEquals(41, p.getAge());
+    }
+
+    public static int dummy(int i) {
+        return i;
+    }
+
+    @Test
+    public void testWatchCallingExternalMethod() {
+        // DROOLS-5514
+        final String str =
+                "import static " + this.getClass().getCanonicalName() + ".dummy;\n" +
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( dummy(age) < 50 ) @watch(!*, age)\n" +
+                "then\n" +
+                "    modify($p) { setAge( $p.getAge()+1 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules();
+
+        assertEquals(50, p.getAge());
+    }
+
+    @Test
+    public void testWatchCallingExternalMethod2() {
+        // DROOLS-5514
+        final String str =
+                "import static " + this.getClass().getCanonicalName() + ".dummy;\n" +
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( dummy(age) < 50 ) @watch(*)\n" +
+                "then\n" +
+                "    modify($p) { setName( $p.getName()+\"1\" ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(3);
+
+        assertEquals("Mario111", p.getName());
+    }
+
+    @Test
+    public void testWatchCallingExternalMethod3() {
+        // DROOLS-5514
+        final String str =
+                "import static " + this.getClass().getCanonicalName() + ".dummy;\n" +
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( dummy(age) < 50 ) @watch(!*, age)\n" +
+                "then\n" +
+                "    modify($p) { setName( $p.getName()+\"1\" ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(3);
+
+        assertEquals("Mario1", p.getName());
+    }
+
+    @Test
+    public void test2PropertiesInOneExpression() {
+        // DROOLS-5677
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R1a\n" +
+                "agenda-group \"group1\"\n" +
+                "when\n" +
+                "    $p : Person( age == 0 )\n" +
+                "then\n" +
+                "    modify($p) { setAge( 20 ) };\n" +
+                "end\n" +
+                "rule R1b \n" +
+                "agenda-group \"group1\"\n" +
+                "when\n" +
+                "    $p : Person( salary == 0 )\n" +
+                "then\n" +
+                "    modify($p) { setSalary( 20 ) };\n" +
+                "end\n" +
+                "rule R2 \n" +
+                "agenda-group \"group2\"\n" +
+                "when\n" +
+                "    $p : Person( age > salary )\n" +
+                "then\n" +
+                "    modify($p) { setSalary( 100 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession(str);
+
+        Person p = new Person("John", 0);
+        p.setSalary(0);
+        ksession.insert(p);
+        ksession.getAgenda().getAgendaGroup("group1").setFocus();
+        ksession.fireAllRules();
+        ksession.getAgenda().getAgendaGroup("group2").setFocus();
+        ksession.fireAllRules();
+
+        assertEquals(20, p.getSalary().intValue()); // R2 should be cancelled
+    }
+
+    @Test
+    public void test3PropertiesInOneExpression() {
+        // DROOLS-5677
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R1a\n" +
+                "agenda-group \"group1\"\n" +
+                "when\n" +
+                "    $p : Person( age == 0 )\n" +
+                "then\n" +
+                "    modify($p) { setAge( 20 ) };\n" +
+                "end\n" +
+                "rule R1b \n" +
+                "agenda-group \"group1\"\n" +
+                "when\n" +
+                "    $p : Person( salary == 0 )\n" +
+                "then\n" +
+                "    modify($p) { setSalary( 10 ) };\n" +
+                "end\n" +
+                "rule R1c \n" +
+                "agenda-group \"group1\"\n" +
+                "when\n" +
+                "    $p : Person( id == 0 )\n" +
+                "then\n" +
+                "    modify($p) { setId( 10 ) };\n" +
+                "end\n" +
+                "rule R2 \n" +
+                "agenda-group \"group2\"\n" +
+                "when\n" +
+                "    $p : Person( age > salary + id )\n" +
+                "then\n" +
+                "    modify($p) { setSalary( 100 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession(str);
+
+        Person p = new Person("John", 0);
+        p.setSalary(0);
+        p.setId(0);
+        ksession.insert(p);
+        ksession.getAgenda().getAgendaGroup("group1").setFocus();
+        ksession.fireAllRules();
+        ksession.getAgenda().getAgendaGroup("group2").setFocus();
+        ksession.fireAllRules();
+
+        assertEquals(10, p.getSalary().intValue()); // R2 should be cancelled
+    }
+
+    public static class Fact {
+        private int a;
+        private String result;
+
+        public int getA() {
+            return a;
+        }
+
+        public void setA(int a) {
+            this.a = a;
+        }
+
+        public String getResult() {
+            return result;
+        }
+
+        public void setResult(String result) {
+            this.result = result;
+        }
+    }
+
+    public static String convertToString(int num) {
+        if (num < 1000) {
+            return "SMALL";
+        }
+        return "BIG";
+    }
+
+    @Test
+    public void testExternalFunction() {
+        // BAPL-1773
+        final String str =
+                "import " + Fact.class.getCanonicalName() + ";\n" +
+                "import static " + PropertyReactivityTest.class.getCanonicalName() + ".*;\n" +
+                "\n" +
+                "rule R1 when\n" +
+                "    $fact: Fact(convertToString(a) == \"BIG\")\n" +
+                "then\n" +
+                "    modify($fact) { setResult(\"OK\") };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Fact fact = new Fact();
+        fact.setA(99999);
+        fact.setResult("NG");
+
+        ksession.insert(fact);
+        assertEquals( 1, ksession.fireAllRules(3) );
+        assertEquals( "OK", fact.getResult() );
+    }
+
+    @Test
+    public void testExternalFunction2() {
+        // BAPL-1773
+        final String str =
+                "import " + Fact.class.getCanonicalName() + ";\n" +
+                "import static " + PropertyReactivityTest.class.getCanonicalName() + ".*;\n" +
+                "\n" +
+                "rule R1 when\n" +
+                "    $fact: Fact(convertToString(a) == \"BIG\")\n" +
+                "then\n" +
+                "    modify($fact) { setA(99999) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Fact fact = new Fact();
+        fact.setA(99999);
+        fact.setResult("NG");
+
+        ksession.insert(fact);
+        assertEquals( 3, ksession.fireAllRules(3) );
+    }
+
+    @Test
+    public void testUnwatch() {
+        // RHDM-1553
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( age < 50 ) @watch(!*)\n" +
+                "then\n" +
+                "    modify($p) { setAge( $p.getAge() + 1 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(3);
+
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testUnwatchWithFieldBinding() {
+        // RHDM-1553
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( $age : age < 50 ) @watch(!*)\n" +
+                "then\n" +
+                "    modify($p) { setAge( $age + 1 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(3);
+
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testUnwatchWithFieldBindingAndMvel() {
+        // RHDM-1553
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R dialect \"mvel\" when\n" +
+                "    $p : Person( $age : age < 50 ) @watch(!*)\n" +
+                "then\n" +
+                "    modify($p) { age = $age + 1 };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(3);
+
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testUnwatchWithWatchedField() {
+        // RHDM-1553
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( name == \"Mario\" ) @watch(!*, age)\n" +
+                "then\n" +
+                "    modify($p) { setAge( $p.getAge() + 1 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(3);
+
+        assertEquals(43, p.getAge());
+    }
+
+    @Test
+    public void testNoConstraint() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( )\n" +
+                "then\n" +
+                "    modify($p) { setAge( $p.getAge()+1 ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(10);
+
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testNoConstraintWithUpdate() {
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( )\n" +
+                "then\n" +
+                "    $p.setAge( $p.getAge()+1 );\n" +
+                "    update($p);\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(10);
+
+        assertEquals(41, p.getAge());
+    }
+
+    @Test
+    public void testModifiesAnnotation() {
+        final String str =
+                "import " + Light.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $l : Light( name == \"Alert\")\n" +
+                "then\n" +
+                "    modify($l) { turnOn() };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Light l = new Light("Alert");
+        ksession.insert( l );
+        int fired = ksession.fireAllRules(10);
+
+        assertEquals(1, fired);
+    }
+
+    public static class Light {
+        private boolean on;
+        private String name;
+
+        public Light(String name) {
+            this.name = name;
+        }
+
+        public boolean isOn() {
+            return on;
+        }
+
+        public void setOn(boolean on) {
+            this.on = on;
+        }
+
+        @Modifies( { "on" } )
+        public void turnOn() {
+            setOn(true);
+        }
+
+        public String getName() {
+            return this.name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
+
+    @Test
+    public void testSettersInAndOutModifyBlock() {
+        // RHDM-1552
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person( age < 50 )\n" +
+                "then\n" +
+                "    $p.setAge( $p.getAge() + 1 );\n" +
+                "    modify($p) { setName( \"Mario\" ) };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(3);
+
+        assertEquals(43, p.getAge());
+    }
+
+    @Test
+    public void testSettersInAndOutModifyBlockMvel() {
+        // RHDM-1552
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R dialect \"mvel\" when\n" +
+                "    $p : Person( age < 50 )\n" +
+                "then\n" +
+                "    $p.age = $p.age + 1;\n" +
+                "    modify($p) { name = \"Mario\" };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(3);
+
+        assertEquals(43, p.getAge());
+    }
+
+    @Test
+    public void testMvelModifyBlockWithComma() {
+        // RHDM-1552
+        final String str =
+                "import " + Person.class.getCanonicalName() + ";\n" +
+                "\n" +
+                "rule R dialect \"mvel\" when\n" +
+                "    $p : Person( age < 50 )\n" +
+                "then\n" +
+                "    modify($p) { setName(\"Mario\"), age = $p.age + 1 };\n" +
+                "end\n";
+
+        KieSession ksession = getKieSession( str );
+
+        Person p = new Person("Mario", 40);
+        ksession.insert( p );
+        ksession.fireAllRules(3);
+
+        assertEquals(43, p.getAge());
     }
 }

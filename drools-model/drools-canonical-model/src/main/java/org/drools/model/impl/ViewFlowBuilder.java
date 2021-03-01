@@ -1,3 +1,20 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ *
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.drools.model.impl;
 
 import java.util.ArrayList;
@@ -21,6 +38,7 @@ import org.drools.model.Consequence;
 import org.drools.model.Declaration;
 import org.drools.model.DeclarationSource;
 import org.drools.model.From;
+import org.drools.model.Global;
 import org.drools.model.Pattern;
 import org.drools.model.RuleItem;
 import org.drools.model.RuleItemBuilder;
@@ -80,6 +98,7 @@ import static java.util.stream.Collectors.toList;
 
 import static org.drools.model.FlowDSL.input;
 import static org.drools.model.impl.NamesGenerator.generateName;
+import static org.drools.model.impl.VariableImpl.GENERATED_VARIABLE_PREFIX;
 
 public class ViewFlowBuilder implements ViewBuilder {
 
@@ -191,24 +210,25 @@ public class ViewFlowBuilder implements ViewBuilder {
                 continue;
             }
 
-            Variable<?> patterVariable = findPatterVariable( viewItem, scopedInputs.keySet() );
+            Variable<?> patternVariable = findPatternVariable(viewItem, scopedInputs.keySet() );
 
             if ( viewItem instanceof InputViewItemImpl ) {
-                scopedInputs.put( patterVariable, (InputViewItemImpl) viewItem );
-                PatternImpl condition = new PatternImpl( patterVariable );
+                scopedInputs.put( patternVariable, (InputViewItemImpl) viewItem );
+                PatternImpl condition = new PatternImpl( patternVariable );
                 condition.addWatchedProps( (( InputViewItemImpl ) viewItem).getWatchedProps() );
                 conditions.add( condition );
-                conditionMap.put( patterVariable, condition );
-                ctx.usedVars.add( patterVariable );
+                conditionMap.put( patternVariable, condition );
+                ctx.usedVars.add( patternVariable );
                 continue;
             }
 
             if ( viewItem instanceof ExistentialExprViewItem ) {
                 ExistentialExprViewItem existential = ( (ExistentialExprViewItem) viewItem );
-                if (patterVariable != null && !ctx.isQuery) {
-                    registerInputsFromViewItem( existential.getExpression(), conditionMap, scopedInputs, patterVariable );
+                if (patternVariable != null && !ctx.isQuery) {
+                    ctx.addExistentialVar( patternVariable );
+                    registerInputsFromViewItem( existential.getExpression(), conditionMap, scopedInputs, ctx );
                 }
-                Condition condition = new PatternImpl( patterVariable, SingleConstraint.TRUE, ctx.bindings.get(patterVariable) );
+                Condition condition = new PatternImpl( patternVariable, SingleConstraint.TRUE, ctx.bindings.get(patternVariable) );
                 Condition.Type existentialType = existential.getType();
                 ViewItem existentialExpr = existential.getExpression();
                 while (existentialExpr instanceof ExistentialExprViewItem) {
@@ -218,56 +238,58 @@ public class ViewFlowBuilder implements ViewBuilder {
                 continue;
             }
 
-            if ( ruleItem instanceof ExprViewItem && ctx.boundVars.contains( patterVariable ) ) {
+            boolean patternVariableIsGlobal = patternVariable instanceof Global;
+            boolean isPatternVariableBound = ctx.boundVars.contains(patternVariable);
+            if ( ruleItem instanceof ExprViewItem && (isPatternVariableBound || patternVariableIsGlobal)) {
                 conditions.add( new EvalImpl( createConstraint( (ExprViewItem) ruleItem ) ) );
                 continue;
             }
 
-            ctx.usedVars.add( patterVariable );
+            ctx.usedVars.add( patternVariable );
             Condition condition;
             if ( type == Type.AND ) {
-                condition = conditionMap.get( patterVariable );
+                condition = conditionMap.get( patternVariable );
                 if ( condition == null ) {
-                    condition = new PatternImpl( patterVariable, SingleConstraint.TRUE, ctx.bindings.get(patterVariable) );
+                    condition = new PatternImpl( patternVariable, SingleConstraint.TRUE, ctx.bindings.get(patternVariable) );
                     conditions.add( condition );
                     if (!(viewItem instanceof AccumulateExprViewItem)) {
-                        conditionMap.put( patterVariable, condition );
+                        conditionMap.put( patternVariable, condition );
                     }
-                    scopedInputs.putIfAbsent( patterVariable, (InputViewItemImpl) input( patterVariable ) );
+                    scopedInputs.putIfAbsent( patternVariable, (InputViewItemImpl) input( patternVariable ) );
                 }
             } else {
-                condition = new PatternImpl( patterVariable );
+                condition = new PatternImpl( patternVariable );
                 conditions.add( condition );
             }
 
-            addInputFromVariableSource( scopedInputs, patterVariable );
+            addInputFromVariableSource( scopedInputs, patternVariable );
 
             Condition modifiedPattern = viewItem2Condition( viewItem, condition, new BuildContext( ctx, scopedInputs ) );
             conditions.set( conditions.indexOf( condition ), modifiedPattern );
 
             if (!ctx.isQuery) {
-                registerInputsFromViewItem( viewItem, conditionMap, scopedInputs, null );
+                registerInputsFromViewItem( viewItem, conditionMap, scopedInputs, ctx );
             }
 
 
             if ( type == Type.AND && !(viewItem instanceof AccumulateExprViewItem) ) {
-                conditionMap.put( patterVariable, modifiedPattern );
+                conditionMap.put( patternVariable, modifiedPattern );
             }
         }
 
         return new CompositePatterns( type, conditions, ctx.usedVars, consequences );
     }
 
-    private static void registerInputsFromViewItem( ViewItem viewItem, Map<Variable<?>, Condition> conditionMap, Map<Variable<?>, InputViewItemImpl<?>> scopedInputs, Variable<?> existentialVar ) {
+    private static void registerInputsFromViewItem( ViewItem viewItem, Map<Variable<?>, Condition> conditionMap, Map<Variable<?>, InputViewItemImpl<?>> scopedInputs, BuildContext ctx ) {
         for (Variable var : viewItem.getVariables()) {
-            if (var.isFact() && !conditionMap.containsKey( var ) && var != existentialVar) {
+            if (var.isFact() && !conditionMap.containsKey( var ) && !ctx.isExistentialVar( var )) {
                 scopedInputs.putIfAbsent( var, (InputViewItemImpl) input( var ) );
             }
         }
     }
 
-    private static Variable<?> findPatterVariable( ViewItem viewItem, Set<Variable<?>> vars ) {
-        Variable<?> patternVariable = viewItem.getFirstVariable();
+    private static Variable<?> findPatternVariable(ViewItem viewItem, Set<Variable<?>> vars ) {
+        Variable<?> patternVariable = findPatternSingleNonGeneratedVariable( viewItem );
         if (!vars.contains( patternVariable )) {
             return patternVariable;
         }
@@ -285,6 +307,22 @@ public class ViewFlowBuilder implements ViewBuilder {
             }
         }
 
+        return patternVariable;
+    }
+
+    private static Variable<?> findPatternSingleNonGeneratedVariable( ViewItem viewItem ) {
+        Variable<?> patternVariable = viewItem.getFirstVariable();
+        if (viewItem instanceof AccumulateExprViewItem && patternVariable == null) {
+            for (Variable itemVar : viewItem.getVariables()) {
+                if (!itemVar.getName().contains( GENERATED_VARIABLE_PREFIX )) {
+                    if (patternVariable == null) {
+                        patternVariable = itemVar;
+                    } else {
+                        return null;
+                    }
+                }
+            }
+        }
         return patternVariable;
     }
 
@@ -397,7 +435,9 @@ public class ViewFlowBuilder implements ViewBuilder {
                 newCondition = condition;
             } else if (acc.getExpr() instanceof Binding) {
                 Binding binding = (( Binding ) acc.getExpr());
-                PatternImpl bindingPattern = new PatternImpl( binding.getInputVariable() );
+                PatternImpl bindingPattern = condition instanceof PatternImpl && (( PatternImpl<?> ) condition).getPatternVariable() == binding.getInputVariable() ?
+                    ( PatternImpl<?> ) condition :
+                    new PatternImpl( binding.getInputVariable() );
                 bindingPattern.addBinding( binding );
                 newCondition = bindingPattern;
                 ctx.usedVars.add( binding.getBoundVariable() );
@@ -454,28 +494,32 @@ public class ViewFlowBuilder implements ViewBuilder {
         final Set<Variable<?>> usedVars;
         final Set<Variable<?>> boundVars;
         final Map<Variable<?>, List<Binding>> bindings;
+        final BuildContext parent;
+
+        final Set<Variable<?>> existentialVars = new HashSet<>();
 
         boolean isQuery = false;
 
         BuildContext( RuleItemBuilder<?>[] viewItemBuilders ) {
-            this( Stream.of( viewItemBuilders ).map( RuleItemBuilder::get ).collect( toList() ), new LinkedHashMap<>(),
+            this( null, Stream.of( viewItemBuilders ).map( RuleItemBuilder::get ).collect( toList() ), new LinkedHashMap<>(),
                     new HashSet<>(), new HashSet<>(), new HashMap<>(), false );
         }
 
         BuildContext( BuildContext orignalContext, ViewItem[] view ) {
-            this( Arrays.asList( view ), orignalContext.inputs, orignalContext.usedVars, orignalContext.boundVars, orignalContext.bindings, orignalContext.isQuery );
+            this( orignalContext, Arrays.asList( view ), orignalContext.inputs, orignalContext.usedVars, orignalContext.boundVars, orignalContext.bindings, orignalContext.isQuery );
         }
 
         BuildContext( BuildContext orignalContext, Map<Variable<?>, InputViewItemImpl<?>> inputs ) {
-            this( orignalContext.ruleItems, inputs, orignalContext.usedVars, orignalContext.boundVars, orignalContext.bindings, orignalContext.isQuery );
+            this( orignalContext, orignalContext.ruleItems, inputs, orignalContext.usedVars, orignalContext.boundVars, orignalContext.bindings, orignalContext.isQuery );
         }
 
         BuildContext( BuildContext orignalContext, ViewItem[] view, Map<Variable<?>, InputViewItemImpl<?>> inputs ) {
-            this( Arrays.asList( view ), inputs, orignalContext.usedVars, orignalContext.boundVars, orignalContext.bindings, orignalContext.isQuery );
+            this( orignalContext, Arrays.asList( view ), inputs, orignalContext.usedVars, orignalContext.boundVars, orignalContext.bindings, orignalContext.isQuery );
         }
 
-        BuildContext( List<RuleItem> ruleItems, Map<Variable<?>, InputViewItemImpl<?>> inputs, Set<Variable<?>> usedVars,
+        BuildContext( BuildContext parent, List<RuleItem> ruleItems, Map<Variable<?>, InputViewItemImpl<?>> inputs, Set<Variable<?>> usedVars,
                       Set<Variable<?>> boundVars, Map<Variable<?>, List<Binding>> bindings, boolean isQuery ) {
+            this.parent = parent;
             this.ruleItems = ruleItems;
             this.inputs = inputs;
             this.usedVars = usedVars;
@@ -487,6 +531,18 @@ public class ViewFlowBuilder implements ViewBuilder {
         void addBinding(Binding bindViewItem) {
             boundVars.add(bindViewItem.getBoundVariable());
             bindings.computeIfAbsent( bindViewItem.getInputVariable(), v -> new ArrayList<>() ).add( bindViewItem );
+        }
+
+        BuildContext getRootParent() {
+            return parent == null ? this : parent.getRootParent();
+        }
+
+        void addExistentialVar(Variable<?> var) {
+            getRootParent().existentialVars.add( var );
+        }
+
+        boolean isExistentialVar(Variable<?> var) {
+            return getRootParent().existentialVars.contains( var );
         }
     }
 }

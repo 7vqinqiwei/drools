@@ -20,12 +20,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-import org.antlr.v4.runtime.ANTLRInputStream;
 import org.antlr.v4.runtime.BaseErrorListener;
+import org.antlr.v4.runtime.CharStream;
+import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonToken;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.DefaultErrorStrategy;
@@ -33,13 +35,16 @@ import org.antlr.v4.runtime.FailedPredicateException;
 import org.antlr.v4.runtime.Parser;
 import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
+import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.Vocabulary;
+import org.antlr.v4.runtime.misc.Interval;
+import org.antlr.v4.runtime.misc.IntervalSet;
 import org.kie.dmn.api.feel.runtime.events.FEELEvent;
 import org.kie.dmn.feel.lang.FEELProfile;
 import org.kie.dmn.feel.lang.Scope;
 import org.kie.dmn.feel.lang.Type;
 import org.kie.dmn.feel.lang.impl.FEELEventListenersManager;
-import org.kie.dmn.feel.lang.types.BuiltInTypeSymbol;
-import org.kie.dmn.feel.parser.feel11.profiles.FEELv12Profile;
+import org.kie.dmn.feel.lang.types.FEELTypeRegistry;
 import org.kie.dmn.feel.runtime.FEELFunction;
 import org.kie.dmn.feel.runtime.events.SyntaxErrorEvent;
 import org.kie.dmn.feel.util.Msg;
@@ -52,19 +57,14 @@ public class FEELParser {
     );
     private static final Pattern DIGITS_PATTERN = Pattern.compile( "[0-9]*" );
 
-    public static FEEL_1_1Parser parse(FEELEventListenersManager eventsManager, String source, Map<String, Type> inputVariableTypes, Map<String, Object> inputVariables, Collection<FEELFunction> additionalFunctions, List<FEELProfile> profiles) {
-        ANTLRInputStream input = new ANTLRInputStream(source);
+    public static FEEL_1_1Parser parse(FEELEventListenersManager eventsManager, String source, Map<String, Type> inputVariableTypes, Map<String, Object> inputVariables, Collection<FEELFunction> additionalFunctions, List<FEELProfile> profiles, FEELTypeRegistry typeRegistry) {
+        CharStream input = CharStreams.fromString(source);
         FEEL_1_1Lexer lexer = new FEEL_1_1Lexer( input );
         CommonTokenStream tokens = new CommonTokenStream( lexer );
         FEEL_1_1Parser parser = new FEEL_1_1Parser( tokens );
 
         ParserHelper parserHelper = new ParserHelper(eventsManager);
         additionalFunctions.forEach(f -> parserHelper.getSymbolTable().getBuiltInScope().define(f.getSymbol()));
-        profiles.stream().filter(FEELv12Profile.class::isInstance).forEach(dc -> {
-            parserHelper.setFeatDMN12EnhancedForLoopEnabled(true);
-            parserHelper.setFeatDMN12weekday(true);
-        });
-
         parser.setHelper(parserHelper);
         parser.setErrorHandler( new FEELErrorHandler() );
         parser.removeErrorListeners(); // removes the error listener that prints to the console
@@ -73,6 +73,10 @@ public class FEELParser {
         // pre-loads the parser with symbols
         defineVariables( inputVariableTypes, inputVariables, parser );
         
+        if (typeRegistry != null) {
+            parserHelper.setTypeRegistry(typeRegistry);
+        }
+
         return parser;
     }
     
@@ -102,7 +106,7 @@ public class FEELParser {
                                                                     0,
                                                                     null ) );
         }
-        ANTLRInputStream input = new ANTLRInputStream(source);
+        CharStream input = CharStreams.fromString(source);
         FEEL_1_1Lexer lexer = new FEEL_1_1Lexer( input );
         CommonTokenStream tokens = new CommonTokenStream( lexer );
         FEEL_1_1Parser parser = new FEEL_1_1Parser( tokens );
@@ -111,7 +115,7 @@ public class FEELParser {
         FEELParserErrorListener errorChecker = new FEELParserErrorListener( null );
         parser.removeErrorListeners(); // removes the error listener that prints to the console
         parser.addErrorListener( errorChecker );
-        FEEL_1_1Parser.NameDefinitionContext nameDef = parser.nameDefinition();
+        FEEL_1_1Parser.NameDefinitionWithEOFContext nameDef = parser.nameDefinitionWithEOF(); // be sure to align below parser.getRuleInvocationStack().contains("nameDefinition...
 
         if( ! errorChecker.hasErrors() &&
             nameDef != null &&
@@ -121,12 +125,9 @@ public class FEELParser {
         return errorChecker.getErrors();
     }
 
-    private static void defineVariables(Map<String, Type> inputVariableTypes, Map<String, Object> inputVariables, FEEL_1_1Parser parser) {
+    public static void defineVariables(Map<String, Type> inputVariableTypes, Map<String, Object> inputVariables, FEEL_1_1Parser parser) {
         inputVariableTypes.forEach( (name, type) -> {
             parser.getHelper().defineVariable( name, type );
-            if (type.getName() != null) {
-                parser.getHelper().getSymbolTable().getGlobalScope().define(new BuiltInTypeSymbol(type.getName(), type));
-            }
         } );
         
         inputVariables.forEach( (name, value) -> {
@@ -168,7 +169,7 @@ public class FEELParser {
             CommonToken token = (CommonToken) offendingSymbol;
             final int tokenIndex = token.getTokenIndex();
             final Parser parser = (Parser) recognizer;
-            if( parser.getRuleInvocationStack().contains( "nameDefinition" ) ) {
+            if (parser.getRuleInvocationStack().contains("nameDefinitionWithEOF")) {
                 error = generateInvalidVariableError(offendingSymbol, line, charPositionInLine, e, token);
             } else if ( "}".equals(token.getText()) && tokenIndex > 1 && ":".equals(parser.getTokenStream().get(tokenIndex - 1).getText()) ) {
                 error = new SyntaxErrorEvent( FEELEvent.Severity.ERROR,
@@ -177,6 +178,30 @@ public class FEELParser {
                                             line,
                                             charPositionInLine,
                                             offendingSymbol );
+            } else if (e != null && parser.getRuleInvocationStack().get(0).equals("ifExpression")) {
+                List<String> expected = toList(e.getExpectedTokens(), e.getRecognizer().getVocabulary());
+                if (expected.contains("ELSE")) {
+                    error = new SyntaxErrorEvent(FEELEvent.Severity.ERROR,
+                                                 Msg.createMessage(Msg.IF_MISSING_ELSE, token.getText(), msg),
+                                                 e,
+                                                 line,
+                                                 charPositionInLine,
+                                                 offendingSymbol);
+                } else if (expected.contains("THEN")) {
+                    error = new SyntaxErrorEvent(FEELEvent.Severity.ERROR,
+                                                 Msg.createMessage(Msg.IF_MISSING_THEN, token.getText(), msg),
+                                                 e,
+                                                 line,
+                                                 charPositionInLine,
+                                                 offendingSymbol);
+                } else { // fallback.
+                    error = new SyntaxErrorEvent(FEELEvent.Severity.ERROR,
+                                                 msg,
+                                                 e,
+                                                 line,
+                                                 charPositionInLine,
+                                                 offendingSymbol);
+                }
             } else {
                 error = new SyntaxErrorEvent( FEELEvent.Severity.ERROR,
                                                   msg,
@@ -202,7 +227,38 @@ public class FEELParser {
         }
 
         public List<FEELEvent> getErrors() {
-            return errors;
+            return errors == null ? Collections.emptyList() : errors;
+        }
+    }
+
+    private static List<String> toList(IntervalSet intervals, Vocabulary vocabulary) {
+        List<String> result = new ArrayList<>();
+        if (intervals == null || intervals.getIntervals() == null || intervals.getIntervals().isEmpty()) {
+            return result;
+        }
+        Iterator<Interval> iter = intervals.getIntervals().iterator();
+        while (iter.hasNext()) {
+            Interval I = iter.next();
+            int a = I.a;
+            int b = I.b;
+            if (a == b) {
+                result.add(elementName(vocabulary, a));
+            } else {
+                for (int i = a; i <= b; i++) {
+                    result.add(elementName(vocabulary, i));
+                }
+            }
+        }
+        return result;
+    }
+
+    private static String elementName(Vocabulary vocabulary, int a) {
+        if (a == Token.EOF) {
+            return "<EOF>";
+        } else if (a == Token.EPSILON) {
+            return "<EPSILON>";
+        } else {
+            return vocabulary.getSymbolicName(a);
         }
     }
 

@@ -1,4 +1,23 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ *
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.drools.model.functions.accumulate;
+
+import java.util.function.Supplier;
 
 import org.drools.model.Argument;
 import org.drools.model.Value;
@@ -9,19 +28,19 @@ public class AccumulateFunction {
     private Variable[] externalVars;
 
     protected final Argument source;
-    protected final Class<?> functionClass;
+    protected final Supplier<?> functionSupplier;
 
-    public AccumulateFunction(Argument source, Class<?> functionClass) {
+    public AccumulateFunction(Argument source, Supplier<?> functionSupplier) {
         this.source = source;
-        this.functionClass = functionClass;
+        this.functionSupplier = functionSupplier;
     }
 
     public Argument getSource() {
         return source;
     }
 
-    public Class<?> getFunctionClass() {
-        return functionClass;
+    public Object createFunctionObject() {
+        return functionSupplier.get();
     }
 
     public Variable getResult() {

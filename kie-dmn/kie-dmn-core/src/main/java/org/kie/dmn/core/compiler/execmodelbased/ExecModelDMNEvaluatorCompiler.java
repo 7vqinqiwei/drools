@@ -25,10 +25,10 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-import org.drools.compiler.commons.jci.compilers.CompilationResult;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import org.drools.compiler.compiler.io.memory.MemoryFileSystem;
-import org.drools.core.common.ProjectClassLoader;
-import org.kie.api.runtime.rule.DataSource;
+import org.drools.reflective.classloader.ProjectClassLoader;
+import org.drools.ruleunit.DataSource;
 import org.kie.dmn.api.core.GeneratedSource;
 import org.kie.dmn.core.api.DMNExpressionEvaluator;
 import org.kie.dmn.core.ast.DMNBaseNode;
@@ -40,12 +40,15 @@ import org.kie.dmn.core.impl.DMNModelImpl;
 import org.kie.dmn.model.api.DMNModelInstrumentedBase;
 import org.kie.dmn.model.api.DRGElement;
 import org.kie.dmn.model.api.DecisionTable;
-import org.kie.internal.jci.CompilationProblem;
+import org.kie.memorycompiler.CompilationProblem;
+import org.kie.memorycompiler.CompilationResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static java.util.stream.Collectors.joining;
+
 import static org.drools.modelcompiler.builder.JavaParserCompiler.getCompiler;
+import static org.kie.dmn.feel.codegen.feel11.CodegenStringUtil.replaceSimpleNameWith;
 
 public class ExecModelDMNEvaluatorCompiler extends DMNEvaluatorCompiler {
 
@@ -215,7 +218,7 @@ public class ExecModelDMNEvaluatorCompiler extends DMNEvaluatorCompiler {
             sb.append( "import java.util.List;\n" );
             sb.append( "import " + FeelValue.class.getCanonicalName() + ";\n" );
             sb.append( "import " + DecisionTableEvaluator.class.getCanonicalName() + ";\n" );
-            sb.append( "import org.kie.api.runtime.rule.DataSource;\n" );
+            sb.append( "import " ).append( DataSource.class.getCanonicalName() ).append( ";\n" );
             sb.append( "import org.drools.model.*;\n" );
             sb.append( "import org.drools.modelcompiler.dsl.pattern.D;\n" );
             sb.append( "import static " ).append( pkgName ).append( "." ).append( clasName ).append( "UnaryTests.TEST_ARRAY;\n" );
@@ -382,11 +385,13 @@ public class ExecModelDMNEvaluatorCompiler extends DMNEvaluatorCompiler {
                         testClassesByInput.put(input, testClass);
                         instancesBuilder.append( "    private static final CompiledDTTest " + testClass + "_INSTANCE = new CompiledDTTest( new " + testClass + "() );\n" );
 
-                        String sourceCode = feel.generateUnaryTestsSource(
+                        ClassOrInterfaceDeclaration classOrInterfaceDeclaration = feel.generateStaticUnaryTestsSource(
                                 input,
                                 ctx,
-                                dTableModel.getColumns().get(j).getType())
-                                .setName(testClass).toString();
+                                dTableModel.getColumns().get(j).getType());
+
+                        replaceSimpleNameWith(classOrInterfaceDeclaration, "TemplateCompiledFEELUnaryTests", testClass);
+                        String sourceCode = classOrInterfaceDeclaration.setName(testClass).toString();
 
                         testsBuilder.append( "\n" );
                         testsBuilder.append( sourceCode );

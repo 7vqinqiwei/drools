@@ -23,6 +23,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
@@ -50,6 +51,11 @@ import org.drools.core.common.DroolsObjectOutputStream;
 import org.kie.api.definition.type.Modifies;
 import org.kie.internal.utils.ClassLoaderUtil;
 
+import static java.lang.Character.toUpperCase;
+import static java.lang.System.arraycopy;
+import static java.lang.reflect.Modifier.PUBLIC;
+import static java.lang.reflect.Modifier.STATIC;
+
 import static org.drools.core.util.StringUtils.ucFirst;
 
 public final class ClassUtils {
@@ -68,7 +74,7 @@ public final class ClassUtils {
     private static final Map<String, Class<?>> primitiveNameToType;
 
     static {
-        final Map<String, String> m = new HashMap<String, String>();
+        final Map<String, String> m = new HashMap<>();
         m.put("int", "I");
         m.put("boolean", "Z");
         m.put("float", "F");
@@ -78,13 +84,13 @@ public final class ClassUtils {
         m.put("double", "D");
         m.put("char", "C");
         m.put("void", "V");
-        final Map<String, String> r = new HashMap<String, String>();
+        final Map<String, String> r = new HashMap<>();
         for (final Map.Entry<String, String> e : m.entrySet()) {
             r.put(e.getValue(), e.getKey());
         }
         abbreviationMap = Collections.unmodifiableMap(m);
 
-        final Map<String, Class<?>> m2 = new HashMap<String, Class<?>>();
+        final Map<String, Class<?>> m2 = new HashMap<>();
         m2.put("int", int.class);
         m2.put("boolean", boolean.class);
         m2.put("float", float.class);
@@ -97,12 +103,7 @@ public final class ClassUtils {
     }
 
     static {
-        PROTECTION_DOMAIN = (ProtectionDomain) AccessController.doPrivileged( new PrivilegedAction() {
-
-            public Object run() {
-                return ClassLoaderUtil.class.getProtectionDomain();
-            }
-        } );
+        PROTECTION_DOMAIN = (ProtectionDomain) AccessController.doPrivileged((PrivilegedAction) ClassLoaderUtil.class::getProtectionDomain);
 
         // determine if we are running on Android
         boolean isAndroid;
@@ -195,7 +196,7 @@ public final class ClassUtils {
      */
     public static Class<?> loadClass(String className,
                                      ClassLoader classLoader) {
-        Class cls = (Class) classes.get( className );
+        Class cls = classes.get(className );
         if ( cls == null ) {
             try {
                 cls = Class.forName( className );
@@ -275,11 +276,7 @@ public final class ClassUtils {
      */
     public static Object instantiateObject(String className,
                                            ClassLoader classLoader, Object...args) {
-        Constructor c = (Constructor) constructors.get( className );
-        if ( c == null ) {
-            c = loadClass(className, classLoader).getConstructors()[0];
-            constructors.put(className, c);
-        }
+        Constructor c = constructors.computeIfAbsent(className, n -> loadClass(n, classLoader).getConstructors()[0]);
 
         Object object;
         try {
@@ -323,7 +320,7 @@ public final class ClassUtils {
                             STAR);
                 } else {
                     // create a new list and add it
-                    List<String> list = new ArrayList<String>();
+                    List<String> list = new ArrayList<>();
                     list.add(name);
                     patterns.put(qualifiedNamespace, list);
                 }
@@ -428,7 +425,7 @@ public final class ClassUtils {
     }
 
     public static List<String> getAccessibleProperties( Class<?> clazz ) {
-        Set<PropertyInClass> props = new TreeSet<PropertyInClass>();
+        Set<PropertyInClass> props = new TreeSet<>();
         for (Method m : clazz.getMethods()) {
             if (m.getParameterTypes().length == 0) {
                 String propName = getter2property(m.getName());
@@ -441,12 +438,12 @@ public final class ClassUtils {
         }
 
         for (Field f : clazz.getFields()) {
-            if ( !Modifier.isFinal(f.getModifiers()) && !Modifier.isStatic(f.getModifiers()) ) {
+            if ( Modifier.isPublic( f.getModifiers() ) && !Modifier.isStatic( f.getModifiers() ) ) {
                 props.add( new PropertyInClass( f.getName(), f.getDeclaringClass() ) );
             }
         }
 
-        List<String> accessibleProperties = new ArrayList<String>();
+        List<String> accessibleProperties = new ArrayList<>();
         for ( PropertyInClass setter : props ) {
             accessibleProperties.add(setter.setter);
         }
@@ -462,31 +459,120 @@ public final class ClassUtils {
     }
 
     public static Method getAccessor(Class<?> clazz, String field) {
-        return Stream.<Supplier<String>>of( () -> "get" + ucFirst(field), () -> field, () -> "is" + ucFirst(field), () -> "get" + field, () -> "is" + field )
-                .map( f -> getMethod(clazz, f.get()) ).filter( Optional::isPresent ).findFirst().flatMap( Function.identity() ).orElse( null );
+        return Stream.<Supplier<String>>of(
+                    () -> "get" + ucFirst(field),
+                    () -> field,
+                    () -> "is" + ucFirst(field),
+                    () -> "get" + field,
+                    () -> "is" + field
+        )
+                .map( f -> getMethod(clazz, f.get(), new Class<?>[0] ))
+                .filter( Optional::isPresent )
+                .findFirst()
+                .flatMap( Function.identity() )
+                .orElse( null );
     }
 
-    private static Optional<Method> getMethod(Class<?> clazz, String name) {
+    public static Method getSetter(Class<?> clazz, String field, Class<?> parameterType) {
+        return Stream.<Supplier<String>>of(
+                () -> "set" + ucFirst(field),
+                () -> field,
+                () -> "set" + field
+        )
+                .map( f -> getMethod(clazz, f.get(), parameterType) )
+                .filter( Optional::isPresent )
+                .findFirst()
+                .flatMap( Function.identity() )
+                .orElse( parameterType.isPrimitive() ? getSetter(clazz, field, convertFromPrimitiveType(parameterType)) : null );
+    }
+
+    private static Optional<Method> getMethod(Class<?> clazz, String name, Class<?>... parameterTypes) {
         try {
-            return Optional.of( clazz.getMethod(name) );
+            return Optional.of( clazz.getMethod(name, parameterTypes) );
         } catch (NoSuchMethodException e) {
             return Optional.empty();
         }
     }
 
+    public static Member getFieldOrAccessor( Class clazz, String property) {
+        for (Field f : clazz.getFields()) {
+            if (property.equals(f.getName())) {
+                if ((f.getModifiers() & PUBLIC) != 0) return f;
+                break;
+            }
+        }
+        return getGetter(clazz, property);
+    }
+
+    private static Method getGetter( Class clazz, String property) {
+        String simple = "get" + property;
+        String simpleIsGet = "is" + property;
+        String isGet = getIsGetter(property);
+        String getter = getGetter(property);
+
+        Method candidate = null;
+
+        if ( Collection.class.isAssignableFrom(clazz) && "isEmpty".equals(isGet)) {
+            try {
+                return Collection.class.getMethod("isEmpty");
+            } catch (NoSuchMethodException ignore) {}
+        }
+
+        for (Method meth : clazz.getMethods()) {
+            if ((meth.getModifiers() & PUBLIC) != 0 && (meth.getModifiers() & STATIC) == 0 && meth.getParameterTypes().length == 0
+                    && (getter.equals(meth.getName()) || property.equals(meth.getName()) || ((isGet.equals(meth.getName()) || simpleIsGet.equals(meth.getName())) && meth.getReturnType() == boolean.class)
+                    || simple.equals(meth.getName()))) {
+                if (candidate == null || candidate.getReturnType().isAssignableFrom(meth.getReturnType())) {
+                    candidate = meth;
+                }
+            }
+        }
+        return candidate;
+    }
+
+    private static String getGetter(String s) {
+        char[] c = s.toCharArray();
+        char[] chars = new char[c.length + 3];
+
+        chars[0] = 'g';
+        chars[1] = 'e';
+        chars[2] = 't';
+
+        chars[3] = toUpperCase(c[0]);
+
+        arraycopy(c, 1, chars, 4, c.length - 1);
+
+        return new String(chars);
+    }
+
+
+    private static String getIsGetter(String s) {
+        char[] c = s.toCharArray();
+        char[] chars = new char[c.length + 2];
+
+        chars[0] = 'i';
+        chars[1] = 's';
+
+        chars[2] = toUpperCase(c[0]);
+
+        arraycopy(c, 1, chars, 3, c.length - 1);
+
+        return new String(chars);
+    }
+
     public static Class extractGenericType(Class<?> clazz, final String methodName) {
         Method method = ClassUtils.getAccessor(clazz, methodName);
-        if(method == null) {
+        if (method == null) {
             throw new RuntimeException(String.format("Unknown accessor %s on %s", methodName, clazz));
         }
 
         java.lang.reflect.Type returnType = method.getGenericReturnType();
 
-        if(returnType instanceof ParameterizedType){
+        if (returnType instanceof ParameterizedType) {
             ParameterizedType type = (ParameterizedType) returnType;
             java.lang.reflect.Type[] typeArguments = type.getActualTypeArguments();
-            for(java.lang.reflect.Type typeArgument : typeArguments){
-                return (Class) typeArgument;
+            if (typeArguments.length > 0) {
+                return (Class) typeArguments[0];
             }
         }
         throw new RuntimeException("No generic type");
@@ -538,7 +624,7 @@ public final class ClassUtils {
     public static boolean isConvertible( Class<?> srcPrimitive, Class<?> tgtPrimitive ) {
         if ( Boolean.TYPE.equals( srcPrimitive ) ) {
             return Boolean.TYPE.equals( tgtPrimitive );
-        } else if ( Byte.TYPE.equals( tgtPrimitive ) ) {
+        } else if ( Byte.TYPE.equals( srcPrimitive ) ) {
             return Byte.TYPE.equals( tgtPrimitive )
                    || Short.TYPE.equals( tgtPrimitive )
                    || Integer.TYPE.equals( tgtPrimitive )
@@ -575,10 +661,6 @@ public final class ClassUtils {
         return false;
     }
 
-    public static boolean isIterable(Class<?> clazz) {
-        return Iterable.class.isAssignableFrom( clazz ) || clazz.isArray();
-    }
-    
     public static boolean isFinal(Class<?> clazz) {
         return Modifier.isFinal( clazz.getModifiers() );
     }
@@ -606,7 +688,7 @@ public final class ClassUtils {
 
         @Override
         public boolean equals(Object obj) {
-            if (obj == null) {
+            if (!(obj instanceof PropertyInClass)) {
                 return false;
             }
             PropertyInClass other = (PropertyInClass) obj;
@@ -621,9 +703,15 @@ public final class ClassUtils {
 
     public static String getter2property(String methodName) {
         if (methodName.startsWith("get") && methodName.length() > 3) {
+            if (methodName.length() > 4 && Character.isUpperCase( methodName.charAt( 4 ) )) {
+                return methodName.substring(3);
+            }
             return Character.toLowerCase(methodName.charAt(3)) + methodName.substring(4);
         }
         if (methodName.startsWith("is") && methodName.length() > 2) {
+            if (methodName.length() > 3 && Character.isUpperCase( methodName.charAt( 3 ) )) {
+                return methodName.substring(2);
+            }
             return Character.toLowerCase(methodName.charAt(2)) + methodName.substring(3);
         }
         return null;
@@ -633,7 +721,18 @@ public final class ClassUtils {
         if (!methodName.startsWith("set") || methodName.length() < 4) {
             return null;
         }
+        if (methodName.length() > 4 && Character.isUpperCase( methodName.charAt( 4 ) )) {
+            return methodName.substring(3);
+        }
         return Character.toLowerCase(methodName.charAt(3)) + methodName.substring(4);
+    }
+
+    public static boolean isGetter(String methodName) {
+        return (methodName.startsWith("get") && methodName.length() > 3) || (methodName.startsWith("is") && methodName.length() > 2);
+    }
+
+    public static boolean isSetter(String methodName) {
+        return (methodName.startsWith("set") && methodName.length() > 3);
     }
 
     public static <T extends Externalizable> T deepClone(T origin) {
@@ -650,11 +749,11 @@ public final class ClassUtils {
         }
         try {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            DroolsObjectOutputStream oos = new DroolsObjectOutputStream(baos);
+            DroolsObjectOutputStream oos = new DroolsObjectOutputStream(baos, true);
             if ( cloningResources != null ) { cloningResources.forEach( (k, v) -> oos.addCustomExtensions(k, v) ); }
             oos.writeObject(origin);
             ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
-            DroolsObjectInputStream ois = new DroolsObjectInputStream(bais, classLoader);
+            DroolsObjectInputStream ois = new DroolsObjectInputStream(bais, classLoader, oos.getClonedByIdentity());
             if ( cloningResources != null ) { cloningResources.forEach( (k, v) -> ois.addCustomExtensions(k, v) ); }
             Object deepCopy = ois.readObject();
             return (T)deepCopy;
@@ -699,7 +798,7 @@ public final class ClassUtils {
     }
 
     public static Set<Class<?>> getAllImplementedInterfaceNames( Class<?> klass ) {
-        Set<Class<?>> interfaces = new HashSet<Class<?>>();
+        Set<Class<?>> interfaces = new HashSet<>();
         while( klass != null ) {
             Class<?>[] localInterfaces = klass.getInterfaces();
             for ( Class<?> intf : localInterfaces ) {
@@ -719,12 +818,12 @@ public final class ClassUtils {
     }
 
     public static Set<Class<?>> getMinimalImplementedInterfaceNames( Class<?> klass ) {
-        Set<Class<?>> interfaces = new HashSet<Class<?>>();
+        Set<Class<?>> interfaces = new HashSet<>();
         while( klass != null ) {
             Class<?>[] localInterfaces = klass.getInterfaces();
             for ( Class<?> intf : localInterfaces ) {
                 boolean subsumed = false;
-                for ( Class<?> i : new ArrayList<Class<?>>( interfaces ) ) {
+                for ( Class<?> i : new ArrayList<>(interfaces) ) {
                     if ( intf.isAssignableFrom( i ) ) {
                         subsumed = true;
                         break;
@@ -844,8 +943,10 @@ public final class ClassUtils {
         try {
             return cl.loadClass( name );
         }
-        catch ( final ClassNotFoundException cnfe ) { } // class doesn't exist
-        catch ( final NoClassDefFoundError ncdfe ) { } // potential mis-match induced by Mac/OSX
+        catch ( final ClassNotFoundException | NoClassDefFoundError cnfe ) {
+            // class doesn't exist
+            // potential mis-match induced by Mac/OSX
+        }
         return null;
     }
 

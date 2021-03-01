@@ -1,12 +1,29 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ *
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.drools.modelcompiler.builder.generator.operatorspec;
 
 import java.util.Optional;
 
-import org.drools.javaparser.ast.drlx.expr.PointFreeExpr;
-import org.drools.javaparser.ast.expr.Expression;
-import org.drools.javaparser.ast.expr.MethodCallExpr;
-import org.drools.javaparser.ast.expr.StringLiteralExpr;
-import org.drools.javaparser.ast.expr.UnaryExpr;
+import org.drools.mvel.parser.ast.expr.PointFreeExpr;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.StringLiteralExpr;
+import com.github.javaparser.ast.expr.UnaryExpr;
 import org.drools.model.functions.Operator;
 import org.drools.modelcompiler.builder.generator.RuleContext;
 import org.drools.modelcompiler.builder.generator.TypedExpression;
@@ -30,7 +47,7 @@ public class NativeOperatorSpec implements OperatorSpec {
             optionalRight.ifPresent( right -> {
                 final TypedExpression coercedRight;
                 if (operator != null && operator.requiresCoercion()) {
-                    final CoercedExpression.CoercedExpressionResult coerce = new CoercedExpression(left, right).coerce();
+                    final CoercedExpression.CoercedExpressionResult coerce = new CoercedExpression(left, right, false).coerce();
                     coercedRight = coerce.getCoercedRight();
                 } else {
                     coercedRight = right;

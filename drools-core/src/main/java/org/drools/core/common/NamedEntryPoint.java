@@ -26,13 +26,12 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.drools.core.RuleBaseConfiguration.AssertBehaviour;
+import org.drools.core.RuleBaseConfiguration;
 import org.drools.core.WorkingMemoryEntryPoint;
+import org.drools.core.base.TraitDisabledHelper;
 import org.drools.core.base.TraitHelper;
 import org.drools.core.beliefsystem.BeliefSet;
 import org.drools.core.definitions.rule.impl.RuleImpl;
-import org.drools.core.factmodel.traits.TraitProxy;
-import org.drools.core.factmodel.traits.TraitableBean;
 import org.drools.core.impl.InternalKnowledgeBase;
 import org.drools.core.impl.StatefulKnowledgeSessionImpl;
 import org.drools.core.impl.StatefulKnowledgeSessionImpl.ObjectStoreWrapper;
@@ -52,7 +51,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static java.util.Arrays.asList;
-import static org.drools.core.reteoo.PropertySpecificUtil.*;
+
+import static org.drools.core.reteoo.PropertySpecificUtil.allSetBitMask;
+import static org.drools.core.reteoo.PropertySpecificUtil.calculatePositiveMask;
 
 public class NamedEntryPoint
         implements
@@ -76,24 +77,29 @@ public class NamedEntryPoint
     protected EntryPointId     entryPoint;
     protected EntryPointNode entryPointNode;
 
-    protected final StatefulKnowledgeSessionImpl wm;
+    protected StatefulKnowledgeSessionImpl wm;
 
     protected FactHandleFactory         handleFactory;
     protected PropagationContextFactory pctxFactory;
 
-    protected final ReentrantLock lock;
+    protected ReentrantLock lock;
 
     protected Set<InternalFactHandle> dynamicFacts = null;
 
-    protected TraitHelper traitHelper;
+    private boolean isEqualityBehaviour = false;
+
+    protected NamedEntryPoint() {
+        lock = null;
+        wm = null;
+    }
 
     public NamedEntryPoint(EntryPointId entryPoint,
                            EntryPointNode entryPointNode,
                            StatefulKnowledgeSessionImpl wm) {
         this(entryPoint,
-             entryPointNode,
-             wm,
-             new ReentrantLock());
+                entryPointNode,
+                wm,
+                new ReentrantLock());
     }
 
     public NamedEntryPoint(EntryPointId entryPoint,
@@ -106,9 +112,13 @@ public class NamedEntryPoint
         this.kBase = this.wm.getKnowledgeBase();
         this.lock = lock;
         this.handleFactory = this.wm.getFactHandleFactory();
-        this.pctxFactory = kBase.getConfiguration().getComponentFactory().getPropagationContextFactory();
-        this.objectStore = new ClassAwareObjectStore(this.kBase.getConfiguration(), this.lock);
-        this.traitHelper = new TraitHelper( wm, this );
+
+        RuleBaseConfiguration conf = this.kBase.getConfiguration();
+        this.pctxFactory = conf.getComponentFactory().getPropagationContextFactory();
+        this.isEqualityBehaviour = RuleBaseConfiguration.AssertBehaviour.EQUALITY.equals(conf.getAssertBehaviour());
+        this.objectStore = isEqualityBehaviour || conf.isMutabilityEnabled() ?
+                new ClassAwareObjectStore( isEqualityBehaviour, this.lock ) :
+                new IdentityObjectStore();
     }
 
     protected NamedEntryPoint( EntryPointId entryPoint,
@@ -121,10 +131,9 @@ public class NamedEntryPoint
         this.handleFactory = handleFactory;
         this.lock = lock;
         this.objectStore = objectStore;
-        this.traitHelper = new TraitHelper( wm, this );
     }
 
-     public void lock() {
+    public void lock() {
         lock.lock();
     }
 
@@ -156,9 +165,9 @@ public class NamedEntryPoint
      */
     public FactHandle insert(final Object object) {
         return insert(object, /* Not-Dynamic */
-                      false,
-                      null,
-                      null);
+                false,
+                null,
+                null);
     }
 
     public FactHandle insert(final Object object,
@@ -178,14 +187,14 @@ public class NamedEntryPoint
         try {
             this.wm.startOperation();
 
-            ObjectTypeConf typeConf = getObjectTypeConfigurationRegistry().getObjectTypeConf( this.entryPoint, object );
+            ObjectTypeConf typeConf = getObjectTypeConfigurationRegistry().getOrCreateObjectTypeConf( this.entryPoint, object );
 
             final PropagationContext propagationContext = this.pctxFactory.createPropagationContext(this.wm.getNextPropagationIdCounter(),
-                                                                                                    PropagationContext.Type.INSERTION,
-                                                                                                    rule,
-                                                                                                    terminalNode,
-                                                                                                    null,
-                                                                                                    entryPoint);
+                    PropagationContext.Type.INSERTION,
+                    rule,
+                    terminalNode,
+                    null,
+                    entryPoint);
             if ( this.wm.isSequential() ) {
                 InternalFactHandle handle = createHandle( object, typeConf );
                 propagationContext.setFactHandle(handle);
@@ -210,29 +219,29 @@ public class NamedEntryPoint
                         return handle;
                     }
                     handle = createHandle( object,
-                                           typeConf );
+                            typeConf );
                 } else {
-                    TruthMaintenanceSystem tms = getTruthMaintenanceSystem();
+                    TruthMaintenanceSystem truthMaintenanceSystem = getTruthMaintenanceSystem();
 
                     EqualityKey key;
                     if ( handle != null && handle.getEqualityKey().getStatus() == EqualityKey.STATED ) {
                         // it's already stated, so just return the handle
                         return handle;
                     } else {
-                        key = tms.get( object );
+                        key = truthMaintenanceSystem.get( object );
                     }
 
-                    if ( key != null && key.getStatus() == EqualityKey.JUSTIFIED ) {
+                    if ( handle != null && key != null && key.getStatus() == EqualityKey.JUSTIFIED && handle != null) {
                         // The justified set needs to be staged, before we can continue with the stated insert
                         BeliefSet bs = handle.getEqualityKey().getBeliefSet();
                         bs.getBeliefSystem().stage( propagationContext, bs ); // staging will set it's status to stated
                     }
 
                     handle = createHandle( object,
-                                           typeConf ); // we know the handle is null
+                            typeConf ); // we know the handle is null
                     if ( key == null ) {
                         key = new EqualityKey( handle, EqualityKey.STATED  );
-                        tms.put( key );
+                        truthMaintenanceSystem.put( key );
                     } else {
                         key.addFactHandle( handle );
                     }
@@ -269,36 +278,36 @@ public class NamedEntryPoint
                        TerminalNode terminalNode,
                        ObjectTypeConf typeConf) {
         PropagationContext pctx = pctxFactory.createPropagationContext(this.wm.getNextPropagationIdCounter(), PropagationContext.Type.INSERTION,
-                                                                       rule, terminalNode, handle, entryPoint);
+                rule, terminalNode, handle, entryPoint);
         insert( handle, object, rule, typeConf, pctx );
     }
 
     public void insert(final InternalFactHandle handle,
-                        final Object object,
-                        final RuleImpl rule,
-                        ObjectTypeConf typeConf,
-                        PropagationContext pctx) {
+                       final Object object,
+                       final RuleImpl rule,
+                       ObjectTypeConf typeConf,
+                       PropagationContext pctx) {
         this.kBase.executeQueuedActions();
 
         this.objectStore.addHandle( handle,
-                                    object );
+                object );
         this.entryPointNode.assertObject( handle,
-                                          pctx,
-                                          typeConf,
-                                          this.wm );
+                pctx,
+                typeConf,
+                this.wm );
 
         this.wm.getRuleRuntimeEventSupport().fireObjectInserted(pctx,
-                                                                handle,
-                                                                object,
-                                                                this.wm);
+                handle,
+                object,
+                this.wm);
     }
 
     public FactHandle insertAsync(Object object) {
-        ObjectTypeConf typeConf = getObjectTypeConfigurationRegistry().getObjectTypeConf( this.entryPoint, object );
+        ObjectTypeConf typeConf = getObjectTypeConfigurationRegistry().getOrCreateObjectTypeConf( this.entryPoint, object );
 
         PropagationContext pctx = this.pctxFactory.createPropagationContext(this.wm.getNextPropagationIdCounter(),
-                                                                            PropagationContext.Type.INSERTION,
-                                                                            null, null, null, entryPoint);
+                PropagationContext.Type.INSERTION,
+                null, null, null, entryPoint);
         InternalFactHandle handle = createHandle( object, typeConf );
         pctx.setFactHandle(handle);
 
@@ -323,8 +332,8 @@ public class NamedEntryPoint
 
         TypeDeclaration typeDeclaration = kBase.getOrCreateExactTypeDeclaration( modifiedClass );
         BitMask mask = typeDeclaration.isPropertyReactive() ?
-                       calculatePositiveMask( modifiedClass, asList(modifiedProperties), typeDeclaration.getAccessibleProperties() ) :
-                       AllSetBitMask.get();
+                calculatePositiveMask( modifiedClass, asList(modifiedProperties), typeDeclaration.getAccessibleProperties() ) :
+                AllSetBitMask.get();
 
         update( (InternalFactHandle) handle, object, mask, modifiedClass, null);
     }
@@ -354,28 +363,26 @@ public class NamedEntryPoint
                 }
 
                 final Object originalObject = handle.getObject();
+                final boolean changedObject = originalObject != object;
 
-                if (handle.getEntryPoint() != this) {
-                    throw new IllegalArgumentException("Invalid Entry Point. You updated the FactHandle on entry point '" + handle.getEntryPoint().getEntryPointId() + "' instead of '" + getEntryPointId() + "'");
+                if (!handle.getEntryPointId().equals( entryPoint )) {
+                    throw new IllegalArgumentException("Invalid Entry Point. You updated the FactHandle on entry point '" + handle.getEntryPointId() + "' instead of '" + getEntryPointId() + "'");
                 }
 
-                final ObjectTypeConf typeConf = getObjectTypeConfigurationRegistry().getObjectTypeConf(this.entryPoint, object);
+                final ObjectTypeConf typeConf = changedObject ?
+                        getObjectTypeConfigurationRegistry().getOrCreateObjectTypeConf(this.entryPoint, object) :
+                        getObjectTypeConfigurationRegistry().getObjectTypeConf(this.entryPoint, object);
 
-                if (handle.getId() == -1 || handle.isExpired()) {
-                    // the handle is invalid, most likely already retracted, so return and we cannot assert a null object
-                    return handle;
-                }
-
-                if (originalObject != object || !AssertBehaviour.IDENTITY.equals(this.kBase.getConfiguration().getAssertBehaviour())) {
+                if (changedObject || isEqualityBehaviour) {
                     this.objectStore.updateHandle(handle, object);
                 }
 
                 this.handleFactory.increaseFactHandleRecency(handle);
 
                 final PropagationContext propagationContext = pctxFactory.createPropagationContext(this.wm.getNextPropagationIdCounter(), PropagationContext.Type.MODIFICATION,
-                                                                                                   activation == null ? null : activation.getRule(),
-                                                                                                   activation == null ? null : activation.getTuple().getTupleSink(),
-                                                                                                   handle, entryPoint, mask, modifiedClass, null);
+                        activation == null ? null : activation.getRule(),
+                        activation == null ? null : activation.getTuple().getTupleSink(),
+                        handle, entryPoint, mask, modifiedClass, null);
 
                 if (typeConf.isTMSEnabled()) {
                     EqualityKey newKey = tms.get(object);
@@ -384,13 +391,13 @@ public class NamedEntryPoint
                     if ((oldKey.getStatus() == EqualityKey.JUSTIFIED || oldKey.getBeliefSet() != null) && newKey != oldKey) {
                         // Mixed stated and justified, we cannot have updates untill we figure out how to use this.
                         throw new IllegalStateException("Currently we cannot modify something that has mixed stated and justified equal objects. " +
-                                                                "Rule " + activation.getRule().getName() + " attempted an illegal operation");
+                                "Rule " + (activation == null ? "" : activation.getRule().getName()) + " attempted an illegal operation");
                     }
 
                     if (newKey == null) {
                         oldKey.removeFactHandle(handle);
                         newKey = new EqualityKey(handle,
-                                                 EqualityKey.STATED); // updates are always stated
+                                EqualityKey.STATED); // updates are always stated
                         handle.setEqualityKey(newKey);
                         getTruthMaintenanceSystem().put(newKey);
                     } else if (newKey != oldKey) {
@@ -405,10 +412,7 @@ public class NamedEntryPoint
                     }
                 }
 
-                if (handle.isTraitable() && object != originalObject
-                        && object instanceof TraitableBean && originalObject instanceof TraitableBean) {
-                    this.traitHelper.replaceCore(handle, object, originalObject, propagationContext.getModificationMask(), object.getClass(), activation);
-                }
+                beforeUpdate(handle, object, activation, originalObject, propagationContext);
 
                 update(handle, object, originalObject, typeConf, propagationContext);
             } finally {
@@ -420,17 +424,20 @@ public class NamedEntryPoint
         return handle;
     }
 
+    protected void beforeUpdate(InternalFactHandle handle, Object object, Activation activation, Object originalObject, PropagationContext propagationContext) {
+    }
+
     public void update(InternalFactHandle handle, Object object, Object originalObject, ObjectTypeConf typeConf, PropagationContext propagationContext) {
         this.entryPointNode.modifyObject( handle,
-                                          propagationContext,
-                                          typeConf,
-                                          this.wm );
+                propagationContext,
+                typeConf,
+                this.wm );
 
         this.wm.getRuleRuntimeEventSupport().fireObjectUpdated(propagationContext,
-                                                               handle,
-                                                               originalObject,
-                                                               object,
-                                                               this.wm);
+                handle,
+                originalObject,
+                object,
+                this.wm);
     }
 
     public void retract(final FactHandle handle) {
@@ -477,8 +484,8 @@ public class NamedEntryPoint
                     handle = this.objectStore.reconnect(handle);
                 }
 
-                if (handle.getEntryPoint() != this) {
-                    throw new IllegalArgumentException("Invalid Entry Point. You updated the FactHandle on entry point '" + handle.getEntryPoint().getEntryPointId() + "' instead of '" + getEntryPointId() + "'");
+                if (!handle.getEntryPointId().equals( entryPoint )) {
+                    throw new IllegalArgumentException("Invalid Entry Point. You updated the FactHandle on entry point '" + handle.getEntryPointId() + "' instead of '" + getEntryPointId() + "'");
                 }
 
                 EqualityKey key = handle.getEqualityKey();
@@ -501,9 +508,7 @@ public class NamedEntryPoint
             return;
         }
 
-        if ( handle.isTraitable() ) {
-            traitHelper.deleteWMAssertedTraitProxies( handle, rule, terminalNode );
-        }
+        beforeDestroy(rule, terminalNode, handle);
 
         final Object object = handle.getObject();
 
@@ -520,9 +525,13 @@ public class NamedEntryPoint
         this.handleFactory.destroyFactHandle( handle );
     }
 
+    protected void beforeDestroy(RuleImpl rule, TerminalNode terminalNode, InternalFactHandle handle) {
+
+    }
+
     private void deleteFromTMS( InternalFactHandle handle, EqualityKey key, ObjectTypeConf typeConf, PropagationContext propagationContext ) {
         if ( typeConf.isTMSEnabled() && key != null ) { // key can be null if we're expiring an event that has been already deleted
-            TruthMaintenanceSystem tms = getTruthMaintenanceSystem();
+            TruthMaintenanceSystem truthMaintenanceSystem = getTruthMaintenanceSystem();
 
             // Update the equality key, which maintains a list of stated FactHandles
             key.removeFactHandle( handle );
@@ -530,7 +539,7 @@ public class NamedEntryPoint
 
             // If the equality key is now empty, then remove it, as it's no longer state either
             if ( key.isEmpty() && key.getLogicalFactHandle() == null ) {
-                tms.remove( key );
+                truthMaintenanceSystem.remove( key );
             } else if ( key.getLogicalFactHandle() != null ) {
                 // The justified set can be unstaged, now that the last stated has been deleted
                 final InternalFactHandle justifiedHandle = key.getLogicalFactHandle();
@@ -552,28 +561,28 @@ public class NamedEntryPoint
 
     public PropagationContext delete(InternalFactHandle handle, Object object, ObjectTypeConf typeConf, RuleImpl rule, Activation activation, TerminalNode terminalNode) {
         final PropagationContext propagationContext = pctxFactory.createPropagationContext( this.wm.getNextPropagationIdCounter(), PropagationContext.Type.DELETION,
-                                                                                            rule, terminalNode,
-                                                                                            handle, this.entryPoint );
+                rule, terminalNode,
+                handle, this.entryPoint );
 
         this.entryPointNode.retractObject( handle,
-                                           propagationContext,
-                                           typeConf,
-                                           this.wm );
+                propagationContext,
+                typeConf,
+                this.wm );
 
-        if ( handle.isTraiting() && handle.getObject() instanceof TraitProxy ) {
-            (( (TraitProxy) handle.getObject() ).getObject()).removeTrait( ( (TraitProxy) handle.getObject() )._getTypeCode() );
-        } else if ( handle.isTraitable() ) {
-            traitHelper.deleteWMAssertedTraitProxies( handle, rule, terminalNode );
-        }
+        afterRetract(handle, rule, terminalNode);
 
         this.objectStore.removeHandle( handle );
 
 
         this.wm.getRuleRuntimeEventSupport().fireObjectRetracted(propagationContext,
-                                                                 handle,
-                                                                 object,
-                                                                 this.wm);
+                handle,
+                object,
+                this.wm);
         return propagationContext;
+    }
+
+    protected void afterRetract(InternalFactHandle handle, RuleImpl rule, TerminalNode terminalNode) {
+
     }
 
     public void removeFromObjectStore(InternalFactHandle handle) {
@@ -586,14 +595,14 @@ public class NamedEntryPoint
         Object object = handle.getObject();
         try {
             final Method method = object.getClass().getMethod( "addPropertyChangeListener",
-                                                               NamedEntryPoint.ADD_REMOVE_PROPERTY_CHANGE_LISTENER_ARG_TYPES );
+                    NamedEntryPoint.ADD_REMOVE_PROPERTY_CHANGE_LISTENER_ARG_TYPES );
 
             method.invoke( object,
-                           this.addRemovePropertyChangeListenerArgs );
+                    this.addRemovePropertyChangeListenerArgs );
 
             if( dynamicFlag ) {
                 if( dynamicFacts == null ) {
-                    dynamicFacts = new HashSet<InternalFactHandle>();
+                    dynamicFacts = new HashSet<>();
                 }
                 dynamicFacts.add( handle );
             }
@@ -601,15 +610,15 @@ public class NamedEntryPoint
             log.error( "Warning: Method addPropertyChangeListener not found" + " on the class " + object.getClass() + " so Drools will be unable to process JavaBean" + " PropertyChangeEvents on the asserted Object" );
         } catch ( final IllegalArgumentException e ) {
             log.error( "Warning: The addPropertyChangeListener method" + " on the class " + object.getClass() + " does not take" + " a simple PropertyChangeListener argument" + " so Drools will be unable to process JavaBean"
-                       + " PropertyChangeEvents on the asserted Object" );
+                    + " PropertyChangeEvents on the asserted Object" );
         } catch ( final IllegalAccessException e ) {
             log.error( "Warning: The addPropertyChangeListener method" + " on the class " + object.getClass() + " is not public" + " so Drools will be unable to process JavaBean" + " PropertyChangeEvents on the asserted Object" );
         } catch ( final InvocationTargetException e ) {
             log.error( "Warning: The addPropertyChangeListener method" + " on the class " + object.getClass() + " threw an InvocationTargetException" + " so Drools will be unable to process JavaBean"
-                       + " PropertyChangeEvents on the asserted Object: " + e.getMessage() );
+                    + " PropertyChangeEvents on the asserted Object: " + e.getMessage() );
         } catch ( final SecurityException e ) {
             log.error( "Warning: The SecurityManager controlling the class " + object.getClass() + " did not allow the lookup of a" + " addPropertyChangeListener method" + " so Drools will be unable to process JavaBean"
-                       + " PropertyChangeEvents on the asserted Object: " + e.getMessage() );
+                    + " PropertyChangeEvents on the asserted Object: " + e.getMessage() );
         }
     }
 
@@ -622,10 +631,10 @@ public class NamedEntryPoint
 
             if ( object != null ) {
                 final Method mehod = object.getClass().getMethod( "removePropertyChangeListener",
-                                                                  NamedEntryPoint.ADD_REMOVE_PROPERTY_CHANGE_LISTENER_ARG_TYPES );
+                        NamedEntryPoint.ADD_REMOVE_PROPERTY_CHANGE_LISTENER_ARG_TYPES );
 
                 mehod.invoke( object,
-                              this.addRemovePropertyChangeListenerArgs );
+                        this.addRemovePropertyChangeListenerArgs );
             }
         } catch ( final NoSuchMethodException e ) {
             // The removePropertyChangeListener method on the class
@@ -634,15 +643,15 @@ public class NamedEntryPoint
             // on the retracted Object
         } catch ( final IllegalArgumentException e ) {
             throw new RuntimeException( "Warning: The removePropertyChangeListener method on the class " + object.getClass() + " does not take a simple PropertyChangeListener argument so Drools will be unable to stop processing JavaBean"
-                                        + " PropertyChangeEvents on the retracted Object" );
+                    + " PropertyChangeEvents on the retracted Object" );
         } catch ( final IllegalAccessException e ) {
             throw new RuntimeException( "Warning: The removePropertyChangeListener method on the class " + object.getClass() + " is not public so Drools will be unable to stop processing JavaBean PropertyChangeEvents on the retracted Object" );
         } catch ( final InvocationTargetException e ) {
             throw new RuntimeException( "Warning: The removePropertyChangeL istener method on the class " + object.getClass() + " threw an InvocationTargetException so Drools will be unable to stop processing JavaBean"
-                                        + " PropertyChangeEvents on the retracted Object: " + e.getMessage() );
+                    + " PropertyChangeEvents on the retracted Object: " + e.getMessage() );
         } catch ( final SecurityException e ) {
             throw new RuntimeException( "Warning: The SecurityManager controlling the class " + object.getClass() + " did not allow the lookup of a removePropertyChangeListener method so Drools will be unable to stop processing JavaBean"
-                                        + " PropertyChangeEvents on the retracted Object: " + e.getMessage() );
+                    + " PropertyChangeEvents on the retracted Object: " + e.getMessage() );
         }
     }
 
@@ -681,29 +690,29 @@ public class NamedEntryPoint
     @SuppressWarnings("unchecked")
     public <T extends FactHandle> Collection<T> getFactHandles() {
         return new ObjectStoreWrapper( this.objectStore,
-                                       null,
-                                       ObjectStoreWrapper.FACT_HANDLE );
+                null,
+                ObjectStoreWrapper.FACT_HANDLE );
     }
 
     @SuppressWarnings("unchecked")
     public <T extends FactHandle> Collection<T> getFactHandles(org.kie.api.runtime.ObjectFilter filter) {
         return new ObjectStoreWrapper( this.objectStore,
-                                       filter,
-                                       ObjectStoreWrapper.FACT_HANDLE );
+                filter,
+                ObjectStoreWrapper.FACT_HANDLE );
     }
 
     @SuppressWarnings("unchecked")
     public Collection<? extends Object> getObjects() {
         return new ObjectStoreWrapper( this.objectStore,
-                                       null,
-                                       ObjectStoreWrapper.OBJECT );
+                null,
+                ObjectStoreWrapper.OBJECT );
     }
 
     @SuppressWarnings("unchecked")
     public Collection<? extends Object> getObjects(org.kie.api.runtime.ObjectFilter filter) {
         return new ObjectStoreWrapper( this.objectStore,
-                                       filter,
-                                       ObjectStoreWrapper.OBJECT );
+                filter,
+                ObjectStoreWrapper.OBJECT );
     }
 
     public String getEntryPointId() {
@@ -717,9 +726,9 @@ public class NamedEntryPoint
     private InternalFactHandle createHandle(final Object object,
                                             ObjectTypeConf typeConf) {
         return this.handleFactory.newFactHandle( object,
-                                                 typeConf,
-                                                 this.wm,
-                                                 this );
+                typeConf,
+                this.wm,
+                this );
     }
 
     public void propertyChange(final PropertyChangeEvent event) {
@@ -728,7 +737,7 @@ public class NamedEntryPoint
         if ( handle == null ) {
             throw new RuntimeException( "Update error: handle not found for object: " + object + ". Is it in the working memory?" );
         }
-        update( handle, object );
+        update( handle, object, event.getPropertyName() );
     }
 
     public void dispose() {
@@ -770,16 +779,29 @@ public class NamedEntryPoint
         return tms;
     }
 
-    public PropagationContextFactory getPctxFactory() {
-        return pctxFactory;
+    @Override
+    public TraitHelper getTraitHelper() {
+        return new TraitDisabledHelper();
     }
 
-    public TraitHelper getTraitHelper() {
-        return traitHelper;
+    public PropagationContextFactory getPctxFactory() {
+        return pctxFactory;
     }
 
     @Override
     public String toString() {
         return entryPoint.toString();
+    }
+
+    private Object ruleUnit;
+
+    @Override
+    public Object getRuleUnit() {
+        return ruleUnit;
+    }
+
+    @Override
+    public void setRuleUnit(Object ruleUnit) {
+        this.ruleUnit = ruleUnit;
     }
 }

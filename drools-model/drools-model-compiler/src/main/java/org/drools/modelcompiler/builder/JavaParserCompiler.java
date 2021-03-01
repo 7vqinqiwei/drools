@@ -25,41 +25,40 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.body.TypeDeclaration;
+import com.github.javaparser.printer.PrettyPrinter;
+import com.github.javaparser.printer.PrettyPrinterConfiguration;
 import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
-import org.drools.compiler.commons.jci.compilers.CompilationResult;
-import org.drools.compiler.commons.jci.compilers.EclipseJavaCompiler;
-import org.drools.compiler.commons.jci.compilers.JavaCompiler;
-import org.drools.compiler.commons.jci.compilers.JavaCompilerFactory;
+import org.drools.compiler.kie.builder.impl.CompilationProblemAdapter;
+import org.kie.memorycompiler.CompilationResult;
+import org.kie.memorycompiler.JavaCompiler;
+import org.kie.memorycompiler.JavaCompilerFactory;
+import org.kie.memorycompiler.JavaConfiguration;
 import org.drools.compiler.compiler.io.memory.MemoryFileSystem;
-import org.drools.compiler.rule.builder.dialect.java.JavaDialectConfiguration;
-import org.drools.javaparser.ast.CompilationUnit;
-import org.drools.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import org.drools.javaparser.printer.PrettyPrinter;
-import org.drools.javaparser.printer.PrettyPrinterConfiguration;
 import org.drools.modelcompiler.builder.errors.CompilationProblemErrorResult;
-import org.kie.internal.jci.CompilationProblem;
+import org.kie.memorycompiler.CompilationProblem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.drools.compiler.compiler.JavaDialectConfiguration.createDefaultCompiler;
 import static org.drools.core.util.ClassUtils.isJboss;
 
 public class JavaParserCompiler {
 
     private static final Logger logger          = LoggerFactory.getLogger(JavaParserCompiler.class);
 
-    private static final JavaDialectConfiguration.CompilerType COMPILER_TYPE = isJboss() ?
-            JavaDialectConfiguration.CompilerType.ECLIPSE :
-            JavaDialectConfiguration.CompilerType.NATIVE;
+    private static final JavaConfiguration.CompilerType COMPILER_TYPE = isJboss() ?
+            JavaConfiguration.CompilerType.ECLIPSE :
+            JavaConfiguration.CompilerType.NATIVE;
 
     private static final JavaCompiler JAVA_COMPILER = createCompiler();
 
     private static final PrettyPrinter PRETTY_PRINTER = createPrettyPrinter();
 
     private static JavaCompiler createCompiler() {
-        JavaCompiler javaCompiler = JavaCompilerFactory.getInstance().loadCompiler( COMPILER_TYPE, "1.8" );
-        if (COMPILER_TYPE == JavaDialectConfiguration.CompilerType.ECLIPSE) {
-            ((EclipseJavaCompiler )javaCompiler).setPrefix( "src/main/java/" );
-        }
+        JavaCompiler javaCompiler = JavaCompilerFactory.loadCompiler( COMPILER_TYPE, "1.8" );
+        javaCompiler.setSourceFolder( "src/main/java/" );
         return javaCompiler;
     }
 
@@ -87,12 +86,12 @@ public class JavaParserCompiler {
         MemoryFileSystem trgMfs = new MemoryFileSystem();
 
         String[] resources = writeModel(classes, srcMfs);
-        CompilationResult resultCompilation = getCompiler().compile(resources, srcMfs, trgMfs, classLoader);
+        CompilationResult resultCompilation = createDefaultCompiler().compile(resources, srcMfs, trgMfs, classLoader);
         CompilationProblem[] errors = resultCompilation.getErrors();
         if(errors.length != 0) {
             classes.forEach(c -> logger.error(c.toString()));
             for (CompilationProblem error : errors) {
-                kbuilder.addBuilderResult(new CompilationProblemErrorResult(error));
+                kbuilder.addBuilderResult(new CompilationProblemErrorResult(new CompilationProblemAdapter( error )));
             }
             return Collections.emptyMap();
         }
@@ -117,7 +116,7 @@ public class JavaParserCompiler {
         for (GeneratedClassWithPackage generatedPojo : classes) {
             final String pkgName = generatedPojo.getPackageName();
             final String folderName = pkgName.replace( '.', '/' );
-            final ClassOrInterfaceDeclaration generatedClass = generatedPojo.getGeneratedClass();
+            final TypeDeclaration generatedClass = generatedPojo.getGeneratedClass();
             final String varsSourceName = String.format("src/main/java/%s/%s.java", folderName, generatedClass.getName());
             srcMfs.write(varsSourceName, toPojoSource(pkgName, generatedPojo.getImports(), generatedPojo.getStaticImports(), generatedClass).getBytes());
             sources.add( varsSourceName );
@@ -126,7 +125,7 @@ public class JavaParserCompiler {
         return sources.toArray( new String[sources.size()] );
     }
 
-    public static String toPojoSource(String pkgName, Collection<String> imports, Collection<String> staticImports, ClassOrInterfaceDeclaration pojo) {
+    public static String toPojoSource(String pkgName, Collection<String> imports, Collection<String> staticImports, TypeDeclaration pojo) {
         CompilationUnit cu = new CompilationUnit();
         cu.setPackageDeclaration( pkgName );
         for (String i : imports) {

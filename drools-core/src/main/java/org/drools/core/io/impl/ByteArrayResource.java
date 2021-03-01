@@ -16,10 +16,6 @@
 
 package org.drools.core.io.impl;
 
-import org.drools.core.io.internal.InternalResource;
-import org.drools.core.util.IoUtils;
-import org.kie.api.io.Resource;
-
 import java.io.ByteArrayInputStream;
 import java.io.Externalizable;
 import java.io.FileNotFoundException;
@@ -33,12 +29,15 @@ import java.net.URL;
 import java.util.Arrays;
 import java.util.Collection;
 
+import org.drools.core.io.internal.InternalResource;
+import org.drools.core.util.IoUtils;
+import org.kie.api.io.Resource;
+
 public class ByteArrayResource extends BaseResource
     implements
     InternalResource,
     Externalizable {
 
-    private byte[] bytes;
     private String encoding;
 
     public ByteArrayResource() { }
@@ -46,8 +45,6 @@ public class ByteArrayResource extends BaseResource
     public ByteArrayResource(byte[] bytes) {
         if ( bytes == null ) {
             throw new IllegalArgumentException( "Provided byte array can not be null" );
-        } else if ( bytes.length == 0 ) {
-            throw new IllegalArgumentException( "Provided byte array can not be empty" );
         }
         this.bytes = bytes;
     }
@@ -61,14 +58,12 @@ public class ByteArrayResource extends BaseResource
     public void readExternal(ObjectInput in) throws IOException,
             ClassNotFoundException {
         super.readExternal( in );
-        bytes = (byte[]) in.readObject();
         encoding = (String) in.readObject();
     }
 
     @Override
     public void writeExternal(ObjectOutput out) throws IOException {
         super.writeExternal( out );
-        out.writeObject( bytes );
         out.writeObject(this.encoding);
     }
 
@@ -99,14 +94,6 @@ public class ByteArrayResource extends BaseResource
 
     public URL getURL() throws IOException {
         throw new FileNotFoundException( "byte[] cannot be resolved to URL" );
-    }
-    
-    public long getLastModified() {
-        throw new IllegalStateException( "reader does have a modified date" );
-    }
-    
-    public long getLastRead() {
-        throw new IllegalStateException( "reader does have a modified date" );
     }
     
     public boolean isDirectory() {

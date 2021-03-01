@@ -16,7 +16,6 @@
 package org.drools.model;
 
 import java.io.Serializable;
-import java.util.Arrays;
 
 import org.drools.model.bitmask.BitMaskUtil;
 import org.drools.model.bitmask.LongBitMask;
@@ -44,9 +43,9 @@ public interface BitMask extends Serializable, Cloneable {
     Class<?> getPatternClass();
     void setPatternClass( Class<?> patternClass );
 
-    static BitMask getPatternMask( Class<?> clazz, String... listenedProperties ) {
-        BitMask bitMask = BitMaskUtil.calculatePatternMask( clazz, Arrays.asList( listenedProperties ) );
-        bitMask.setPatternClass( clazz );
+    static BitMask getPatternMask( DomainClassMetadata metadata, String... listenedProperties ) {
+        BitMask bitMask = BitMaskUtil.calculatePatternMask( metadata, true, listenedProperties );
+        bitMask.setPatternClass( metadata.getDomainClass() );
         return bitMask;
     }
 

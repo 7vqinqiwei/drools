@@ -114,6 +114,7 @@ public abstract class BaseFEELFunction
 
                     return result;
                 } else {
+                    // CandidateMethod cm could be null also if reflection failed on Platforms not supporting getClass().getDeclaredMethods()
                     String ps = getClass().toString();
                     logger.error( "Unable to find function '" + getName() + "( " + ps.substring( 1, ps.length() - 1 ) + " )'" );
                     ctx.notifyEvt(() -> {
@@ -122,7 +123,7 @@ public abstract class BaseFEELFunction
                 }
             } else {
                 if ( isNamedParams ) {
-                    params = rearrangeParameters( params, this.getParameterNames().get( 0 ) );
+                    params = rearrangeParameters(params, this.getParameters().get(0).stream().map(Param::getName).collect(Collectors.toList()));
                 }
                 Object result = invoke( ctx, params );
                 if ( result instanceof Either ) {
@@ -243,7 +244,7 @@ public abstract class BaseFEELFunction
                         if ( valueCollection.size() == 1 ) {
                             Object singletonValue = valueCollection.iterator().next();
                             // re-perform the assignable-from check, this time using the element itself the singleton value from the original parameter list
-                            if ( parameterTypes[i].isAssignableFrom( singletonValue.getClass() ) ) {
+                            if ( singletonValue != null && parameterTypes[i].isAssignableFrom( singletonValue.getClass() ) ) {
                                 Object[] newParams = new Object[cm.getActualParams().length];
                                 System.arraycopy( cm.getActualParams(), 0, newParams, 0, cm.getActualParams().length ); // can't rely on adjustForVariableParameters() have actually copied
                                 newParams[i] = singletonValue;
@@ -279,7 +280,7 @@ public abstract class BaseFEELFunction
     }
 
     @Override
-    public List<List<String>> getParameterNames() {
+    public List<List<Param>> getParameters() {
         // TODO: we could implement this method using reflection, just for consistency,
         // but it is not used at the moment
         return Collections.emptyList();

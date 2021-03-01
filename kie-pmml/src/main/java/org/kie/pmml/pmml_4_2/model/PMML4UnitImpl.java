@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -36,9 +37,10 @@ import org.kie.pmml.pmml_4_2.PMML4Model;
 import org.kie.pmml.pmml_4_2.PMML4Unit;
 import org.kie.pmml.pmml_4_2.extensions.PMMLExtensionNames;
 
+import static org.drools.core.command.runtime.pmml.PmmlConstants.DEFAULT_ROOT_PACKAGE;
+
 public class PMML4UnitImpl implements PMML4Unit {
 
-    public static String DEFAULT_ROOT_PACKAGE = "org.kie.pmml.pmml_4_2";
     private static PMML4ModelFactory modelFactory = PMML4ModelFactory.getInstance();
     private PMML rawPmml;
     private Map<String, PMML4Model> modelsMap;
@@ -271,7 +273,7 @@ public class PMML4UnitImpl implements PMML4Unit {
 
     @Override
     public String getRootPackage() {
-        return packageFromRawPmml() != null ? packageFromRawPmml() : PMML4UnitImpl.DEFAULT_ROOT_PACKAGE;
+        return packageFromRawPmml() != null ? packageFromRawPmml() : DEFAULT_ROOT_PACKAGE;
     }
 
     public Map<String, String> getModelPackageNames() {
@@ -288,5 +290,22 @@ public class PMML4UnitImpl implements PMML4Unit {
     public String getModelExternalMiningBeansRules(String modelName) {
         PMML4Model model = getModelsMap().get(modelName);
         return model != null ? model.getExternalBeansMiningRules() : null;
+    }
+
+    @Override
+    public PMMLDataField findDataDictionaryEntry(String fieldName) {
+        PMMLDataField field = this.dataDictionaryMap.get(fieldName);
+        // If the field is not found using the name as a key in the map
+        // then iterate through the map's values looking at the raw PMML
+        // field info, to find it.
+        if (field == null) {
+            for (Iterator<PMMLDataField> iter = this.dataDictionaryMap.values().iterator(); iter.hasNext() && field == null;) {
+                PMMLDataField fld = iter.next();
+                if (fld != null && fld.getRawDataField() != null && fld.getRawDataField().getName().equals(fieldName)) {
+                    field = fld;
+                }
+            }
+        }
+        return field;
     }
 }

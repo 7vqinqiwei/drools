@@ -1,5 +1,5 @@
 /*
- * Copyright 2005 JBoss Inc
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -8,6 +8,7 @@
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
+ *
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
@@ -23,7 +24,17 @@ import org.drools.model.view.ViewItemBuilder;
 public interface QueryDef {
 
     Class[] QUERIES_BY_ARITY = new Class[] {
-            Query0Def.class, Query1Def.class, Query2Def.class, Query3Def.class, Query4Def.class
+            Query0Def.class,
+            Query1Def.class,
+            Query2Def.class,
+            Query3Def.class,
+            Query4Def.class,
+            Query5Def.class,
+            Query6Def.class,
+            Query7Def.class,
+            Query8Def.class,
+            Query9Def.class,
+            Query10Def.class,
     };
 
     static Class getQueryClassByArity(int arity) {

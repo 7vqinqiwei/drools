@@ -21,12 +21,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-import org.drools.compiler.commons.jci.compilers.CompilationResult;
-import org.drools.compiler.commons.jci.compilers.EclipseJavaCompiler;
-import org.drools.compiler.commons.jci.compilers.EclipseJavaCompilerSettings;
+import org.kie.memorycompiler.CompilationResult;
+import org.kie.memorycompiler.JavaCompiler;
+import org.kie.memorycompiler.jdknative.NativeJavaCompiler;
 import org.drools.compiler.compiler.io.File;
+import org.drools.compiler.compiler.io.FileSystemItem;
 import org.drools.compiler.compiler.io.Folder;
-import org.drools.compiler.compiler.io.Resource;
 import org.drools.compiler.compiler.io.memory.MemoryFile;
 import org.drools.compiler.compiler.io.memory.MemoryFileSystem;
 import org.drools.compiler.kie.builder.impl.KieFileSystemImpl;
@@ -50,7 +50,9 @@ import org.kie.api.runtime.KieSession;
 import org.kie.api.runtime.StatelessKieSession;
 import org.kie.api.runtime.conf.ClockTypeOption;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class AbstractKnowledgeTest {
 
@@ -127,32 +129,32 @@ public class AbstractKnowledgeTest {
         KieBaseModel kieBaseModel1 = kproj.newKieBaseModel(namespace + ".KBase1")
                 .setEqualsBehavior( EqualityBehaviorOption.EQUALITY )
                 .setEventProcessingMode( EventProcessingOption.STREAM )
-                .addPackage( namespace + ".KBase1" )
+                .addPackage( namespace + ".test1" )
                 .setDefault( true );
             
 
         kieBaseModel1.newKieSessionModel( namespace + ".KSession1" )
                      .setType( KieSessionType.STATELESS )
-                     .setClockType( ClockTypeOption.get( "realtime" ) )
+                     .setClockType( ClockTypeOption.REALTIME )
                      .setDefault( true );
 
         kieBaseModel1.newKieSessionModel( namespace + ".KSession2")
                      .setType( KieSessionType.STATEFUL )
-                     .setClockType( ClockTypeOption.get( "pseudo" ) );
+                     .setClockType( ClockTypeOption.PSEUDO );
 
         kieBaseModel1.newKieSessionModel( namespace + ".KSessionDefault")
                      .setType( KieSessionType.STATEFUL )
-                     .setClockType( ClockTypeOption.get( "pseudo" ) )
+                     .setClockType( ClockTypeOption.PSEUDO )
                      .setDefault( true );
 
         KieBaseModel kieBaseModel2 = kproj.newKieBaseModel( namespace + ".KBase2")
                                           .setEqualsBehavior( EqualityBehaviorOption.IDENTITY )
-                                          .addPackage( namespace + ".KBase2")
+                                          .addPackage( namespace + ".test2")
                 .setEventProcessingMode( EventProcessingOption.CLOUD );
 
         kieBaseModel2.newKieSessionModel(namespace + ".KSession3")
                 .setType( KieSessionType.STATEFUL )
-                .setClockType( ClockTypeOption.get( "pseudo" ) );
+                .setClockType( ClockTypeOption.PSEUDO );
 
         KieBaseModel kieBaseModel3 = kproj.newKieBaseModel(namespace + ".KBase3")
                 .addInclude( kieBaseModel1.getName() )
@@ -162,7 +164,7 @@ public class AbstractKnowledgeTest {
 
         kieBaseModel3.newKieSessionModel(namespace + ".KSession4")
                 .setType( KieSessionType.STATELESS )
-                .setClockType( ClockTypeOption.get( "pseudo" ) );
+                .setClockType( ClockTypeOption.PSEUDO );
 
         KieServices ks = KieServices.Factory.get();
 
@@ -179,8 +181,8 @@ public class AbstractKnowledgeTest {
         String kbase2R1 = getRule( namespace + ".test2", "rule1", version );
         String kbase2R2 = getRule( namespace + ".test2", "rule2", version );
                 
-        String fldKB1 = "src/main/resources/" + kieBaseModel1.getName().replace( '.', '/' );
-        String fldKB2 = "src/main/resources/" + kieBaseModel2.getName().replace( '.', '/' );
+        String fldKB1 = "src/main/resources/" + (namespace + ".test1").replace( '.', '/' );
+        String fldKB2 = "src/main/resources/" + (namespace + ".test2").replace( '.', '/' );
         
         kfs.write( fldKB1 + "/rule1.drl", kBase1R1.getBytes() );
         kfs.write( fldKB1 + "/rule2.drl", kBase1R2.getBytes() );
@@ -298,10 +300,7 @@ public class AbstractKnowledgeTest {
 
         copyFolder( srcMfs, srcFolder, trgMfs, trgFolder, kproj );
 
-        EclipseJavaCompilerSettings settings = new EclipseJavaCompilerSettings();
-        settings.setSourceVersion( "1.5" );
-        settings.setTargetVersion( "1.5" );
-        EclipseJavaCompiler compiler = new EclipseJavaCompiler( settings, "" );
+        JavaCompiler compiler = new NativeJavaCompiler();
         CompilationResult res = compiler.compile( classes.toArray( new String[classes.size()] ), trgMfs, trgMfs );
 
         if ( res.getErrors().length > 0 ) {
@@ -329,12 +328,12 @@ public class AbstractKnowledgeTest {
             trgMfs.getFolder( trgFolder.getPath() ).create();
         }
 
-        Collection<Resource> col = (Collection<Resource>) srcFolder.getMembers();
+        Collection<FileSystemItem> col = (Collection<FileSystemItem>) srcFolder.getMembers();
         if (col == null) {
             return;
         }
 
-        for ( Resource rs : col ) {
+        for ( FileSystemItem rs : col ) {
             if ( rs instanceof Folder ) {
                 copyFolder( srcMfs, (Folder) rs, trgMfs, trgFolder.getFolder( ((Folder) rs).getName() ), kproj );
             } else {
@@ -358,7 +357,7 @@ public class AbstractKnowledgeTest {
     public void writeFs(MemoryFileSystem mfs,
                         Folder f,
                         java.io.File file1) {
-        for ( Resource rs : f.getMembers() ) {
+        for ( FileSystemItem rs : f.getMembers() ) {
             if ( rs instanceof Folder ) {
                 java.io.File file2 = new java.io.File( file1, ((Folder) rs).getName());
                 file2.mkdir();

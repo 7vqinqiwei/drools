@@ -19,13 +19,12 @@ package org.drools.core.fluent.impl;
 import java.util.function.BiFunction;
 
 import org.drools.core.command.NewKieSessionCommand;
-import org.drools.core.command.NewRuleUnitExecutorCommand;
 import org.kie.api.runtime.KieContainer;
+import org.kie.api.runtime.KieSessionConfiguration;
 import org.kie.internal.builder.fluent.DMNRuntimeFluent;
 import org.kie.internal.builder.fluent.ExecutableBuilder;
 import org.kie.internal.builder.fluent.KieContainerFluent;
 import org.kie.internal.builder.fluent.KieSessionFluent;
-import org.kie.internal.builder.fluent.RuleUnitExecutorFluent;
 
 public class KieContainerFluentImpl extends BaseBatchFluent<ExecutableBuilder, ExecutableBuilder> implements KieContainerFluent {
 
@@ -49,23 +48,11 @@ public class KieContainerFluentImpl extends BaseBatchFluent<ExecutableBuilder, E
     }
 
     @Override
-    public KieSessionFluent newSessionCustomized(String sessionId, BiFunction<String, KieContainer, KieContainer> customizer) {
+    public KieSessionFluent newSessionCustomized(String sessionId, BiFunction<String, KieContainer, KieSessionConfiguration> kieSessionConfigurationCustomizer) {
         NewKieSessionCommand cmd = new NewKieSessionCommand(sessionId);
-        cmd.setBeforeSessionCreation(customizer);
+        cmd.setCustomizeSessionConfiguration(kieSessionConfigurationCustomizer);
         ctx.addCommand(cmd);
         return new KieSessionFluentImpl(ctx);
-    }
-
-    @Override
-    public RuleUnitExecutorFluent newRuleUnitExecutor() {
-        return newRuleUnitExecutor(null);
-    }
-
-    @Override
-    public RuleUnitExecutorFluent newRuleUnitExecutor(String sessionName) {
-        NewRuleUnitExecutorCommand cmd = new NewRuleUnitExecutorCommand(sessionName);
-        ctx.addCommand(cmd);
-        return new RuleUnitExecutorFluentImpl(ctx);
     }
 
     @Override

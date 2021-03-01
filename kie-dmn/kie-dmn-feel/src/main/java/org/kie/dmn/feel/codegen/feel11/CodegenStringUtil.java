@@ -16,16 +16,29 @@
 
 package org.kie.dmn.feel.codegen.feel11;
 
+import javax.lang.model.SourceVersion;
+
+import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.expr.SimpleName;
+
 public class CodegenStringUtil {
 
     /**
      * Escape for identifier part (not beginning)
-     * 
+     *
      * Similar to drools-model's StringUtil
      */
     public static String escapeIdentifier(String partOfIdentifier) {
+        String id = partOfIdentifier;
+        if (!Character.isJavaIdentifierStart(id.charAt(0))) {
+            id = "_" + id;
+        }
+        id = id.replaceAll("_", "__");
+        if (SourceVersion.isKeyword(id)) {
+            id = "_" + id;
+        }
         StringBuilder result = new StringBuilder();
-        char[] cs = partOfIdentifier.toCharArray();
+        char[] cs = id.toCharArray();
         for (char c : cs) {
             if (Character.isJavaIdentifierPart(c)) {
                 result.append(c);
@@ -34,5 +47,10 @@ public class CodegenStringUtil {
             }
         }
         return result.toString();
+    }
+
+    public static void replaceSimpleNameWith(Node source, String oldName, String newName) {
+        source.findAll(SimpleName.class, ne -> ne.toString().equals(oldName))
+                .forEach(r -> r.replace(new SimpleName(newName)));
     }
 }

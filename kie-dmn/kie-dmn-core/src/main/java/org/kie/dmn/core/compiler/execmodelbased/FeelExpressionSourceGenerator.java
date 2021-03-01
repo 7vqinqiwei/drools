@@ -20,7 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import org.drools.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import org.kie.dmn.core.compiler.DMNCompilerContext;
 import org.kie.dmn.core.compiler.DMNFEELHelper;
 import org.kie.dmn.feel.codegen.feel11.CodegenStringUtil;
@@ -48,10 +48,10 @@ public class FeelExpressionSourceGenerator implements ExecModelDMNEvaluatorCompi
         sourceGenerator = new JavaParserSourceGenerator(dTableName, ExecModelDMNEvaluatorCompiler.GeneratorsEnum.FEEL_EXPRESSION.type, pkgName);
         sourceGenerator.addImports(org.kie.dmn.feel.codegen.feel11.CompiledCustomFEELFunction.class,
                                    org.kie.dmn.feel.codegen.feel11.CompiledFEELExpression.class,
-                                   org.kie.dmn.feel.codegen.feel11.CompiledFEELSemanticMappings.class,
                                    org.kie.dmn.feel.codegen.feel11.CompiledFEELSupport.class,
                                    EvaluationContext.class,
                                    CompiledFEELExpression.class);
+        sourceGenerator.addStaticImportStar(org.kie.dmn.feel.codegen.feel11.CompiledFEELSemanticMappings.class);
 
         generateInitRows(ctx, dTableModel, dTableName);
         generateInputClauses(ctx, dTableModel);

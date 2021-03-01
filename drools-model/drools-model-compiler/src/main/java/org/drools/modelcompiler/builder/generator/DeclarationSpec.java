@@ -1,16 +1,34 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ *
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.drools.modelcompiler.builder.generator;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
+import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.drools.compiler.lang.descr.BehaviorDescr;
 import org.drools.compiler.lang.descr.EntryPointDescr;
 import org.drools.compiler.lang.descr.PatternDescr;
 import org.drools.core.base.ClassObjectType;
 import org.drools.core.rule.Declaration;
 import org.drools.core.spi.PatternExtractor;
-import org.drools.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.Expression;
 
 public class DeclarationSpec {
     private final String bindingId;
@@ -19,6 +37,9 @@ public class DeclarationSpec {
     private final Optional<Expression> declarationSource;
     private final Optional<String> variableName;
     private final Boolean isGlobal;
+
+    private String boundVariable;
+    private MethodCallExpr bindingExpr;
 
     public DeclarationSpec(String bindingId, Class<?> declarationClass) {
         this(bindingId, declarationClass, Optional.empty(), Optional.empty(), Optional.empty(), false);
@@ -54,7 +75,6 @@ public class DeclarationSpec {
 
     public List<BehaviorDescr> getBehaviors() {
         return optPattern.map(PatternDescr::getBehaviors).orElse(Collections.emptyList());
-
     }
 
     public String getBindingId() {
@@ -73,12 +93,32 @@ public class DeclarationSpec {
         return variableName;
     }
 
-    public org.drools.javaparser.ast.type.Type getType() {
+    public com.github.javaparser.ast.type.Type getBoxedType() {
         return DrlxParseUtil.classToReferenceType(getDeclarationClass());
+    }
+
+    public com.github.javaparser.ast.type.Type getRawType() {
+        return DrlxParseUtil.toType(getDeclarationClass());
     }
 
     public Boolean isGlobal() {
         return isGlobal;
+    }
+
+    public Optional<String> getBoundVariable() {
+        return Optional.ofNullable( boundVariable );
+    }
+
+    public void setBoundVariable( String boundVariable ) {
+        this.boundVariable = boundVariable;
+    }
+
+    public MethodCallExpr getBindingExpr() {
+        return bindingExpr;
+    }
+
+    public void setBindingExpr( MethodCallExpr bindingExpr ) {
+        this.bindingExpr = bindingExpr;
     }
 
     @Override

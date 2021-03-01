@@ -23,8 +23,10 @@ import java.io.Reader;
 import java.net.URISyntaxException;
 import java.util.List;
 
+import org.assertj.core.api.Assertions;
 import org.junit.Ignore;
 import org.junit.Test;
+import org.kie.api.builder.Message.Level;
 import org.kie.dmn.api.core.DMNMessage;
 import org.kie.dmn.api.core.DMNMessageType;
 import org.kie.dmn.api.core.DMNModel;
@@ -34,12 +36,17 @@ import org.kie.dmn.backend.marshalling.v1x.DMNMarshallerFactory;
 import org.kie.dmn.core.DMNInputRuntimeTest;
 import org.kie.dmn.core.DMNRuntimeTest;
 import org.kie.dmn.core.decisionservices.DMNDecisionServicesTest;
+import org.kie.dmn.core.imports.ImportsTest;
 import org.kie.dmn.core.util.DMNRuntimeUtil;
+import org.kie.dmn.core.v1_3.DMN13specificTest;
+import org.kie.dmn.model.api.DMNElement;
+import org.kie.dmn.model.api.DMNModelInstrumentedBase;
 import org.kie.dmn.model.api.Definitions;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.kie.dmn.validation.DMNValidator.Validation.VALIDATE_COMPILATION;
@@ -114,7 +121,7 @@ public class ValidatorTest extends AbstractValidatorTest {
     @Test
     public void testINVOCATION_MISSING_EXPR() {
         List<DMNMessage> validate = validator.validate( getReader( "INVOCATION_MISSING_EXPR.dmn" ), VALIDATE_SCHEMA, VALIDATE_MODEL, VALIDATE_COMPILATION);
-        assertThat( ValidatorUtil.formatMessages( validate ), validate.size(), is( 1 ) );
+        assertThat(ValidatorUtil.formatMessages(validate), validate.size(), greaterThan(0));
         assertThat( validate.get( 0 ).toString(), validate.get( 0 ).getMessageType(), is( DMNMessageType.MISSING_EXPRESSION ) );
     }
 
@@ -151,7 +158,7 @@ public class ValidatorTest extends AbstractValidatorTest {
     @Test
     public void testINVOCATION_INCONSISTENT_PARAM_NAMES() {
         List<DMNMessage> validate = validator.validate( getReader( "INVOCATION_INCONSISTENT_PARAM_NAMES.dmn" ), VALIDATE_SCHEMA, VALIDATE_MODEL, VALIDATE_COMPILATION);
-        assertThat( ValidatorUtil.formatMessages( validate ), validate.size(), is( 2 ) );
+        assertThat(ValidatorUtil.formatMessages(validate), validate.size(), greaterThan(0));
         assertTrue( validate.stream().anyMatch( p -> p.getMessageType().equals( DMNMessageType.PARAMETER_MISMATCH ) ) );
     }
     
@@ -175,7 +182,7 @@ public class ValidatorTest extends AbstractValidatorTest {
     @Test
     public void testINVOCATION_WRONG_PARAM_COUNT() {
         List<DMNMessage> validate = validator.validate( getReader( "INVOCATION_WRONG_PARAM_COUNT.dmn" ), VALIDATE_SCHEMA, VALIDATE_MODEL, VALIDATE_COMPILATION);
-        assertThat( ValidatorUtil.formatMessages( validate ), validate.size(), is( 3 ) );
+        assertThat(ValidatorUtil.formatMessages(validate), validate.size(), greaterThan(0));
         assertTrue( validate.stream().anyMatch( p -> p.getMessageType().equals( DMNMessageType.PARAMETER_MISMATCH ) ) );
     }
     
@@ -250,6 +257,15 @@ public class ValidatorTest extends AbstractValidatorTest {
         List<DMNMessage> validate = validator.validate( getReader( "UNKNOWN_VARIABLE.dmn" ), VALIDATE_SCHEMA, VALIDATE_MODEL, VALIDATE_COMPILATION);
         assertThat( ValidatorUtil.formatMessages( validate ), validate.size(), is( 1 ) );
         assertTrue( validate.stream().anyMatch( p -> p.getMessageType().equals( DMNMessageType.ERR_COMPILING_FEEL ) ) );
+    }
+
+    @Test
+    public void testUNKNOWN_OPERATOR() {
+        List<DMNMessage> validate = validator.validate( getReader( "UNKNOWN_OPERATOR.dmn" ),
+                                                        VALIDATE_SCHEMA,
+                                                        VALIDATE_MODEL,
+                                                        VALIDATE_COMPILATION);
+        assertThat( ValidatorUtil.formatMessages( validate ), validate.size(), greaterThan( 0 ) );
     }
 
     @Test
@@ -331,7 +347,9 @@ public class ValidatorTest extends AbstractValidatorTest {
         // DMN v1.2 CH11 example for Adjudication does not define decision logic nor typeRef:
         assertThat(ValidatorUtil.formatMessages(validate), validate.size(), is(2));
         assertTrue(validate.stream().anyMatch(p -> p.getMessageType().equals(DMNMessageType.MISSING_TYPE_REF)));
-        assertTrue(validate.stream().anyMatch(p -> p.getMessageType().equals(DMNMessageType.MISSING_EXPRESSION)));
+        assertTrue(validate.stream().anyMatch(p -> p.getLevel() == Level.WARNING &&
+                                                   p.getMessageType().equals(DMNMessageType.MISSING_EXPRESSION) &&
+                                                   p.getSourceId().equals("d_Adjudication")));
     }
 
     @Test
@@ -368,4 +386,140 @@ public class ValidatorTest extends AbstractValidatorTest {
                                                                   getReader("DSWithImport20181008-ModelB-missingDMNImport.dmn"));
         assertThat(missingDMNImport.stream().filter(p -> p.getMessageType().equals(DMNMessageType.REQ_NOT_FOUND)).count(), is(2L)); // on Decision and Decision Service missing to locate the dependency given Import is omitted.
     }
+
+    @Test
+    public void testInvalidFunctionNameInvocation() {
+        List<DMNMessage> validate = validator.validate(getReader("invalidFunctionNameInvocation.dmn"),
+                                                       VALIDATE_MODEL,
+                                                       VALIDATE_COMPILATION);
+        assertThat(validate.stream().filter(p -> p.getLevel() == Level.WARNING && p.getMessageType().equals(DMNMessageType.REQ_NOT_FOUND)).count(), is(1L));
+    }
+
+    @Test
+    public void testDecisionNoExpr() {
+        // DROOLS-4765 DMN validation rule alignment for missing expression
+        List<DMNMessage> validate = validator.validate(getReader("noExpr.dmn", DMNRuntimeTest.class),
+                                                       VALIDATE_MODEL); // this test ensures the WARN for missing expr on the Decision node also applies when using static model validation rules (before compilation)
+        assertThat(ValidatorUtil.formatMessages(validate), validate.size(), is(1));
+        assertThat(validate.stream().filter(p -> p.getLevel() == Level.WARNING &&
+                                                 p.getMessageType().equals(DMNMessageType.MISSING_EXPRESSION) &&
+                                                 p.getSourceId().equals("_cdd03786-d1ab-47b5-ba05-df830458dc62")).count(),
+                   is(1L));
+    }
+
+    @Test
+    public void testValidateSchemaAndModels() {
+        // DROOLS-4773 DMN Validator fluent builder schema & analysis using reader
+        List<DMNMessage> validate = validator.validateUsing(VALIDATE_SCHEMA,
+                                                            VALIDATE_MODEL)
+                                             .theseModels(getReader("base join.dmn", ImportsTest.class),
+                                                          getReader("use join.dmn", ImportsTest.class));
+        assertThat(ValidatorUtil.formatMessages(validate), validate.size(), is(0));
+    }
+
+    @Test
+    public void testDMNv1_3_simple() {
+        List<DMNMessage> validate = validator.validate(getReader("simple.dmn", DMN13specificTest.class),
+                                                       VALIDATE_SCHEMA,
+                                                       VALIDATE_MODEL,
+                                                       VALIDATE_COMPILATION);
+        assertThat(ValidatorUtil.formatMessages(validate), validate.size(), is(0));
+    }
+
+    @Test
+    public void testDMNv1_3_ch11example1() {
+        List<DMNMessage> validate = validator.validateUsing(VALIDATE_SCHEMA,
+                                                            VALIDATE_MODEL,
+                                                            VALIDATE_COMPILATION)
+                                             .theseModels(getReader("Financial.dmn", DMN13specificTest.class),
+                                                          getReader("Chapter 11 Example.dmn", DMN13specificTest.class));
+        assertThat(ValidatorUtil.formatMessages(validate), validate.size(), is(2));
+        assertTrue(ValidatorUtil.formatMessages(validate),
+                   validate.stream().anyMatch(p -> p.getLevel() == Level.WARNING &&
+                                                   p.getMessageType().equals(DMNMessageType.MISSING_EXPRESSION) &&
+                                                   p.getSourceId().equals("_4bd33d4a-741b-444a-968b-64e1841211e7")));
+        assertTrue(ValidatorUtil.formatMessages(validate),
+                   validate.stream().anyMatch(p -> p.getLevel() == Level.ERROR &&
+                                                   p.getMessageType().equals(DMNMessageType.INVALID_NAME) &&
+                                                   p.getSourceId().equals("_96b30012-a6e7-4545-89d3-068ec722469c")));
+    }
+
+    @Test
+    public void testSomethingInBetweenOC() {
+        List<DMNMessage> validate = validator.validateUsing(VALIDATE_SCHEMA,
+                                                            VALIDATE_MODEL,
+                                                            VALIDATE_COMPILATION)
+                                             .theseModels(getReader("somethingInBetween.dmn"));
+        assertThat(ValidatorUtil.formatMessages(validate), validate.size(), is(1));
+        assertTrue(ValidatorUtil.formatMessages(validate),
+                   validate.stream().anyMatch(p -> p.getLevel() == Level.ERROR &&
+                                                   p.getMessageType().equals(DMNMessageType.ERR_COMPILING_FEEL) &&
+                                                   p.getSourceId().equals("_841ed91c-db69-401e-890b-08a5bf44222d")));
+    }
+
+    @Test
+    public void testDMNv1_3_ch11example2() {
+        List<DMNMessage> validate = validator.validateUsing(VALIDATE_SCHEMA,
+                                                            VALIDATE_MODEL,
+                                                            VALIDATE_COMPILATION)
+                                             .theseModels(getReader("Recommended Loan Products.dmn", DMN13specificTest.class),
+                                                          getReader("Loan info.dmn", DMN13specificTest.class));
+        assertThat(ValidatorUtil.formatMessages(validate), validate.size(), is(0));
+    }
+
+    @Test
+    public void test_dttyperef() {
+        List<DMNMessage> validate = validator.validate(getReader("wrongxml/dttyperef.dmn"), VALIDATE_SCHEMA, VALIDATE_MODEL, VALIDATE_COMPILATION);
+        assertThat(ValidatorUtil.formatMessages(validate), validate.size(), is(1));
+        DMNMessage v0 = validate.get(0);
+        Assertions.assertThat(v0.getLevel()).isEqualTo(Level.ERROR);
+        Assertions.assertThat(v0.getMessageType()).isEqualTo(DMNMessageType.MISSING_TYPE_REF);
+        Assertions.assertThat(v0.getSourceId()).isEqualTo("_99FC159F-0D94-45C3-A9BD-F1388017A5D4");
+    }
+
+    @Test
+    public void testBkmAndBindingWarnLevel() {
+        // DROOLS-4875 DMN validation message alignment to DMN XSD constraint
+        List<DMNMessage> validate = validator.validate(getReader("bkmAndBinding.dmn"),
+                                                       VALIDATE_SCHEMA,
+                                                       VALIDATE_MODEL,
+                                                       VALIDATE_COMPILATION);
+        assertTrue(ValidatorUtil.formatMessages(validate),
+                   validate.stream().allMatch(p -> p.getLevel() == Level.WARNING));
+        assertThat(ValidatorUtil.formatMessages(validate), validate.size(), is(2));
+        assertTrue(ValidatorUtil.formatMessages(validate),
+                   validate.stream().anyMatch(p -> p.getLevel() == Level.WARNING &&
+                                                   p.getSourceId() != null &&
+                                                   p.getSourceId().equals("_3ce3c41a-450a-40d1-9e9c-09180cd29879")));
+        assertTrue(ValidatorUtil.formatMessages(validate),
+                   validate.stream().anyMatch(p -> p.getLevel() == Level.WARNING &&
+                                                   ((DMNElement) ((DMNModelInstrumentedBase) p.getSourceReference()).getParent()).getId().equals("_d8b0c243-3fb6-40ec-a29c-28f8bdb92e13")));
+    }
+
+    @Test
+    public void testInformationItemMissingTypeRef_SC() {
+        // DROOLS-5152 DMN align message level for missing typeRef attribute
+        checkInformationItemMissingTypeRef(VALIDATE_SCHEMA, VALIDATE_COMPILATION);
+    }
+
+    @Test
+    public void testInformationItemMissingTypeRef_SM() {
+        // DROOLS-5152 DMN align message level for missing typeRef attribute
+        checkInformationItemMissingTypeRef(VALIDATE_SCHEMA, VALIDATE_MODEL);
+    }
+
+    @Test
+    public void testInformationItemMissingTypeRef_SMC() {
+        // DROOLS-5152 DMN align message level for missing typeRef attribute
+        checkInformationItemMissingTypeRef(VALIDATE_SCHEMA, VALIDATE_MODEL, VALIDATE_COMPILATION);
+    }
+
+    private void checkInformationItemMissingTypeRef(DMNValidator.Validation... options) {
+        List<DMNMessage> validate = validator.validate(getReader("variableMissingTypeRef.dmn"),
+                                                       options);
+        assertTrue(ValidatorUtil.formatMessages(validate),
+                   validate.stream().allMatch(p -> p.getLevel() == Level.WARNING &&
+                                                   p.getSourceId().equals("_FE47213A-2042-49DE-9A44-65831DA6AD11")));
+    }
+
 }

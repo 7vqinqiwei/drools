@@ -1,3 +1,20 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ *
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.drools.modelcompiler.builder.generator;
 
 import java.util.Collections;
@@ -6,6 +23,13 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import com.github.javaparser.ast.expr.ClassExpr;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.IntegerLiteralExpr;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.StringLiteralExpr;
+import com.github.javaparser.ast.type.Type;
 import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
 import org.drools.compiler.lang.descr.BaseDescr;
 import org.drools.compiler.lang.descr.BehaviorDescr;
@@ -14,17 +38,7 @@ import org.drools.compiler.lang.descr.PatternDescr;
 import org.drools.compiler.lang.descr.PatternSourceDescr;
 import org.drools.compiler.lang.descr.WindowDeclarationDescr;
 import org.drools.compiler.lang.descr.WindowReferenceDescr;
-import org.drools.drlx.DrlxParser;
-import org.drools.javaparser.JavaParser;
-import org.drools.javaparser.ast.drlx.expr.TemporalLiteralChunkExpr;
-import org.drools.javaparser.ast.drlx.expr.TemporalLiteralExpr;
-import org.drools.javaparser.ast.expr.ClassExpr;
-import org.drools.javaparser.ast.expr.Expression;
-import org.drools.javaparser.ast.expr.IntegerLiteralExpr;
-import org.drools.javaparser.ast.expr.MethodCallExpr;
-import org.drools.javaparser.ast.expr.NameExpr;
-import org.drools.javaparser.ast.expr.StringLiteralExpr;
-import org.drools.javaparser.ast.type.Type;
+import org.drools.core.addon.TypeResolver;
 import org.drools.model.Window;
 import org.drools.model.WindowDefinition;
 import org.drools.modelcompiler.builder.PackageModel;
@@ -34,10 +48,13 @@ import org.drools.modelcompiler.builder.generator.drlxparse.DrlxParseResult;
 import org.drools.modelcompiler.builder.generator.drlxparse.DrlxParseSuccess;
 import org.drools.modelcompiler.builder.generator.drlxparse.ParseResultVisitor;
 import org.drools.modelcompiler.builder.generator.drlxparse.SingleDrlxParseSuccess;
-import org.kie.soup.project.datamodel.commons.types.TypeResolver;
+import org.drools.mvel.parser.DrlxParser;
+import org.drools.mvel.parser.ast.expr.TemporalLiteralChunkExpr;
+import org.drools.mvel.parser.ast.expr.TemporalLiteralExpr;
 
 import static java.util.stream.Collectors.toList;
 
+import static com.github.javaparser.StaticJavaParser.parseType;
 import static org.drools.modelcompiler.builder.generator.DrlxParseUtil.generateLambdaWithoutParameters;
 import static org.drools.modelcompiler.builder.generator.DrlxParseUtil.toVar;
 import static org.drools.modelcompiler.builder.generator.DslMethodNames.ENTRY_POINT_CALL;
@@ -95,7 +112,7 @@ public class WindowReferenceGenerator {
 
         final Class<?> initClass = DrlxParseUtil.getClassFromContext(typeResolver, pattern.getObjectType());
 
-        final Type initType = JavaParser.parseType(initClass.getCanonicalName());
+        final Type initType = parseType(initClass.getCanonicalName());
         initializer.addArgument(new ClassExpr(initType));
 
         if (pattern.getSource() != null) {

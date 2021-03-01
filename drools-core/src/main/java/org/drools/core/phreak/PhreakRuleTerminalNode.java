@@ -15,7 +15,6 @@
 
 package org.drools.core.phreak;
 
-import org.drools.core.base.DefaultKnowledgeHelper;
 import org.drools.core.common.AgendaItem;
 import org.drools.core.common.EventSupport;
 import org.drools.core.common.InternalAgenda;
@@ -24,7 +23,6 @@ import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.TupleSets;
 import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.reteoo.LeftTuple;
-import org.drools.core.reteoo.RuleTerminalNode;
 import org.drools.core.reteoo.RuleTerminalNodeLeftTuple;
 import org.drools.core.reteoo.TerminalNode;
 import org.drools.core.spi.PropagationContext;
@@ -82,8 +80,7 @@ public class PhreakRuleTerminalNode {
     public static void doLeftTupleInsert(TerminalNode rtnNode, RuleExecutor executor,
                                          InternalAgenda agenda, RuleAgendaItem ruleAgendaItem,
                                          LeftTuple leftTuple) {
-        PropagationContext pctx = leftTuple.getPropagationContext();
-        pctx = RuleTerminalNode.findMostRecentPropagationContext(leftTuple, pctx);
+        PropagationContext pctx = leftTuple.findMostRecentPropagationContext();
 
         if ( rtnNode.getRule().isNoLoop() && rtnNode.equals(pctx.getTerminalNodeOrigin()) ) {
             return;
@@ -100,9 +97,8 @@ public class PhreakRuleTerminalNode {
 
         if (  rtnNode.getRule().isLockOnActive() &&
               leftTuple.getPropagationContext().getType() != PropagationContext.Type.RULE_ADDITION ) {
-            long handleRecency = pctx.getFactHandle().getRecency();
             InternalAgendaGroup agendaGroup = executor.getRuleAgendaItem().getAgendaGroup();
-            if (blockedByLockOnActive(rtnNode.getRule(), pctx, handleRecency, agendaGroup)) {
+            if (blockedByLockOnActive(rtnNode.getRule(), pctx, agendaGroup)) {
                 es.getAgendaEventSupport().fireActivationCancelled(rtnLeftTuple, wm, MatchCancelledCause.FILTER );
                 return;
             }
@@ -117,7 +113,8 @@ public class PhreakRuleTerminalNode {
 
         executor.addLeftTuple(leftTuple);
         leftTuple.increaseActivationCountForEvents(); // increased here, decreased in Agenda's cancelActivation and fireActivation
-        if( !rtnNode.isFireDirect() && executor.isDeclarativeAgendaEnabled() ) {
+
+        if ( !rtnNode.isFireDirect() && executor.isDeclarativeAgendaEnabled() ) {
             agenda.insertAndStageActivation(rtnLeftTuple);
         }
     }
@@ -125,7 +122,7 @@ public class PhreakRuleTerminalNode {
     private static int getSalienceValue( TerminalNode rtnNode, RuleAgendaItem ruleAgendaItem, AgendaItem leftTuple, InternalWorkingMemory wm ) {
         Salience salience = ruleAgendaItem.getRule().getSalience();
         return salience == null ? 0 : (salience.isDynamic() ?
-                    salience.getValue(new DefaultKnowledgeHelper( leftTuple, wm), rtnNode.getRule(), wm) :
+                    salience.getValue(wm.createKnowledgeHelper( leftTuple ), rtnNode.getRule(), wm) :
                     salience.getValue() );
     }
 
@@ -158,9 +155,7 @@ public class PhreakRuleTerminalNode {
 
     public static void doLeftTupleUpdate(TerminalNode rtnNode, RuleExecutor executor,
                                          InternalAgenda agenda, LeftTuple leftTuple) {
-        PropagationContext pctx = leftTuple.getPropagationContext();
-        pctx = RuleTerminalNode.findMostRecentPropagationContext(leftTuple,
-                                                                 pctx);
+        PropagationContext pctx = leftTuple.findMostRecentPropagationContext();
 
         boolean blocked = false;
         RuleTerminalNodeLeftTuple rtnLeftTuple = (RuleTerminalNodeLeftTuple) leftTuple;
@@ -185,9 +180,8 @@ public class PhreakRuleTerminalNode {
             if (  rtnNode.getRule().isLockOnActive() &&
                   pctx.getType() != PropagationContext.Type.RULE_ADDITION ) {
 
-                long handleRecency = pctx.getFactHandle().getRecency();
                 InternalAgendaGroup agendaGroup = executor.getRuleAgendaItem().getAgendaGroup();
-                if (blockedByLockOnActive(rtnNode.getRule(), pctx, handleRecency, agendaGroup)) {
+                if (blockedByLockOnActive(rtnNode.getRule(), pctx, agendaGroup)) {
                     addToExector = false;
                 }
             }
@@ -227,16 +221,10 @@ public class PhreakRuleTerminalNode {
     }
 
     public static void doLeftDelete(InternalAgenda agenda, RuleExecutor executor, Tuple leftTuple) {
-        PropagationContext pctx = leftTuple.getPropagationContext();
-        pctx = RuleTerminalNode.findMostRecentPropagationContext(leftTuple, pctx);
-
         RuleTerminalNodeLeftTuple rtnLt = ( RuleTerminalNodeLeftTuple ) leftTuple;
         rtnLt.setMatched( false );
 
-        agenda.cancelActivation( leftTuple,
-                                 pctx,
-                                 rtnLt,
-                                 rtnLt.getTerminalNode() );
+        agenda.cancelActivation( leftTuple.findMostRecentPropagationContext(), rtnLt );
 
         if ( leftTuple.getMemory() != null ) {
             // Expiration propagations should not be removed from the list, as they still need to fire
@@ -248,9 +236,9 @@ public class PhreakRuleTerminalNode {
 
     private static boolean blockedByLockOnActive(RuleImpl rule,
                                           PropagationContext pctx,
-                                          long handleRecency,
                                           InternalAgendaGroup agendaGroup) {
         if ( rule.isLockOnActive() ) {
+            long handleRecency = pctx.getFactHandle().getRecency();
             boolean isActive = agendaGroup.isActive();
             long activatedForRecency = agendaGroup.getActivatedForRecency();
             long clearedForRecency = agendaGroup.getClearedForRecency();
@@ -258,8 +246,8 @@ public class PhreakRuleTerminalNode {
             if ( isActive && activatedForRecency < handleRecency &&
                  agendaGroup.getAutoFocusActivator() != pctx ) {
                 return true;
-            } else if ( clearedForRecency != -1 && clearedForRecency >= handleRecency ) {
-                return true;
+            } else {
+                return clearedForRecency != -1 && clearedForRecency >= handleRecency;
             }
 
         }

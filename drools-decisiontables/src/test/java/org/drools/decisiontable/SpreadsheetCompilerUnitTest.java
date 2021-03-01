@@ -85,13 +85,43 @@ public class SpreadsheetCompilerUnitTest {
     }
 
     @Test
+    public void testMultilineActions() {
+        final SpreadsheetCompiler converter = new SpreadsheetCompiler();
+        final InputStream stream = this.getClass().getResourceAsStream("MultiLinesInAction.xls");
+        final String drl = converter.compile(stream,
+                                             InputType.XLS);
+
+        Assertions.assertThat(drl).doesNotContain("\\n");
+    }
+
+    @Test
+    public void testMultilineActionsAndMultiLineInConstant() {
+        final SpreadsheetCompiler converter = new SpreadsheetCompiler();
+        final InputStream stream = this.getClass().getResourceAsStream("MultiLinesInActionAndMultiLineInConstant.xls");
+        final String drl = converter.compile(stream,
+                                             InputType.XLS);
+
+        Assertions.assertThat(drl).contains(" **\n** ");
+    }
+
+    @Test
+    public void testMultilineActionsAndMultiLineAsConstant() {
+        final SpreadsheetCompiler converter = new SpreadsheetCompiler();
+        final InputStream stream = this.getClass().getResourceAsStream("MultiLinesInActionAndMultiLineAsConstant.xls");
+        final String drl = converter.compile(stream,
+                                             InputType.XLS);
+
+        Assertions.assertThat(drl).contains(" **\\n** ");
+    }
+
+    @Test
     public void testMultilineCommentsInDescription() {
         final SpreadsheetCompiler converter = new SpreadsheetCompiler();
         final InputStream stream = this.getClass().getResourceAsStream("/data/Multiline comment example.xls");
         final String drl = converter.compile(stream,
                                              InputType.XLS);
 
-        Assertions.assertThat(drl).containsSequence("/* Say", "Hello */", "/* Say", "Goobye */");
+        Assertions.assertThat(drl).containsSubsequence("/* Say", "Hello */", "/* Say", "Goobye */");
         Assertions.assertThat(drl).doesNotContain("// Say");
     }
 
@@ -102,7 +132,7 @@ public class SpreadsheetCompilerUnitTest {
         final String drl = converter.compile(stream,
                                              InputType.XLS);
 
-        Assertions.assertThat(drl).containsSequence("/* Do these actions:",
+        Assertions.assertThat(drl).containsSubsequence("/* Do these actions:",
                                                     "- Print Greeting",
                                                     "- Set params: {message:'bye cruel world', status:'bye'} */",
                                                     "/* Print message: \"Bye!\"",
@@ -469,7 +499,7 @@ public class SpreadsheetCompilerUnitTest {
 
         assertNotNull( drl );
 
-        final String expected = "package Some_business_rules;\n" +
+        final String expected = "package data;\n" +
                 "//generated from Decision Table\n" +
                 "import org.drools.decisiontable.Person;\n" +
                 "// rule values at C10, header at C5\n" +
@@ -517,7 +547,7 @@ public class SpreadsheetCompilerUnitTest {
 
         assertNotNull( drl );
 
-        final String expected = "package Some_business_rules;\n" +
+        final String expected = "package data;\n" +
                 "//generated from Decision Table\n" +
                 "import org.drools.decisiontable.Person;\n" +
                 "// rule values at C10, header at C5\n" +
@@ -567,7 +597,7 @@ public class SpreadsheetCompilerUnitTest {
 
         assertNotNull( drl );
 
-        final String expected = "package Some_business_rules;\n" +
+        final String expected = "package data;\n" +
                 "//generated from Decision Table\n" +
                 "import org.drools.decisiontable.Person;\n" +
                 "// rule values at C10, header at C5\n" +
@@ -619,7 +649,7 @@ public class SpreadsheetCompilerUnitTest {
 
         assertNotNull( drl );
 
-        final String expected = "package Connexis_Cash_Enrichment;\n" +
+        final String expected = "package data;\n" +
                 "//generated from Decision Table\n" +
                 "import com.brms.dto.fact.*;\n" +
                 "dialect \"mvel\";\n" +
@@ -755,7 +785,7 @@ public class SpreadsheetCompilerUnitTest {
 
         assertNotNull( drl );
 
-        final String expected = "package com.sample;\n" +
+        final String expected = "package data;\n" +
                 "//generated from Decision Table\n" +
                 "import com.sample.DecisionTableTest.Message;\n" +
                 "dialect \"mvel\"\n" +
@@ -789,5 +819,72 @@ public class SpreadsheetCompilerUnitTest {
                 .as("Lhs order is wrong")
                 .containsSequence("accumulate(Person(name == \"John\", $a : age); $max:max($a))",
                         "$p:Person(name == \"John\", age == $max)");
+    }
+
+    @Test
+    public void testNewLineInConstraint() {
+        // DROOLS-4788
+        final SpreadsheetCompiler converter = new SpreadsheetCompiler();
+        String drl = converter.compile("/data/NewLineInConstraint.xls", InputType.XLS);
+        assertTrue(drl.contains( "map[\"Key2\"] == var2" ));
+    }
+
+    @Test
+    public void testNoUnit() {
+        final SpreadsheetCompiler converter = new SpreadsheetCompiler();
+        final InputStream stream = this.getClass().getResourceAsStream( "/data/CanDrink.xls" );
+        final String drl = converter.compile(stream, InputType.XLS);
+        assertTrue( drl.contains( "$p: Person(age < 18)" ) );
+    }
+
+    @Test
+    public void testNoLhsParam() {
+        // DROOLS-5782
+        final SpreadsheetCompiler converter = new SpreadsheetCompiler();
+        final InputStream stream = this.getClass().getResourceAsStream( "/data/CanDrinkNoParam.xls" );
+        final String drl = converter.compile(stream, InputType.XLS);
+        assertTrue( drl.contains( "$p : Person( age < 18 )\n" ) );
+    }
+
+    @Test
+    public void testChecksOnLhs() {
+        // DROOLS-5785
+        final SpreadsheetCompiler converter = new SpreadsheetCompiler();
+        final InputStream stream = this.getClass().getResourceAsStream( "/data/CanDrinkCheckOnLhs.xls" );
+        final String drl = converter.compile(stream, InputType.XLS);
+        System.out.println(drl);
+        assertTrue( drl.contains( "$p : Person(age < 18, name == \"Matteo\")\n" ) );
+    }
+
+    @Test
+    public void testRuleUnit() {
+        final SpreadsheetCompiler converter = new SpreadsheetCompiler();
+        final InputStream stream = this.getClass().getResourceAsStream( "/data/CanDrinkUnit.xls" );
+        final String drl = converter.compile(stream, InputType.XLS);
+        assertTrue( drl.contains( "unit CanDrinkUnit;" ) );
+        assertTrue( drl.contains( "query Results $r: /results end" ) );
+        assertTrue( drl.contains( "$p: /persons[age < 18]" ) );
+    }
+
+    @Test
+    public void testUseWatchAnnotation() {
+        final SpreadsheetCompiler converter = new SpreadsheetCompiler();
+        final InputStream stream = this.getClass().getResourceAsStream( "/data/CanDrinkUsingWatch.xls" );
+        final String drl = converter.compile(stream, InputType.XLS);
+        assertTrue( drl.contains( "$p: Person(age < 18) @watch(name)" ) );
+    }
+
+    @Test
+    public void testZipBomb() {
+        // RHDM-1468
+        System.setProperty( "drools.excelParser.minInflateRatio", "0.001" );
+        try {
+            final SpreadsheetCompiler converter = new SpreadsheetCompiler();
+            final InputStream stream = this.getClass().getResourceAsStream( "/data/Sample2.xlsx" );
+            final String drl = converter.compile( stream, InputType.XLS );
+            assertTrue( drl.contains( "m:Message(status == Message.HELLO)" ) );
+        } finally {
+            System.clearProperty( "drools.excelParser.minInflateRatio" );
+        }
     }
 }

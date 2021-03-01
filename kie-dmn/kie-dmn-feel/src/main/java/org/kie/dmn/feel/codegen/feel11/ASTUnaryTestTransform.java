@@ -22,10 +22,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import org.kie.dmn.feel.lang.ast.ASTBuilderFactory;
 import org.kie.dmn.feel.lang.ast.ASTNode;
 import org.kie.dmn.feel.lang.ast.BaseNode;
 import org.kie.dmn.feel.lang.ast.BooleanNode;
+import org.kie.dmn.feel.lang.ast.CTypeNode;
 import org.kie.dmn.feel.lang.ast.DashNode;
 import org.kie.dmn.feel.lang.ast.ListNode;
 import org.kie.dmn.feel.lang.ast.NameDefNode;
@@ -35,9 +35,9 @@ import org.kie.dmn.feel.lang.ast.NumberNode;
 import org.kie.dmn.feel.lang.ast.QualifiedNameNode;
 import org.kie.dmn.feel.lang.ast.RangeNode;
 import org.kie.dmn.feel.lang.ast.StringNode;
-import org.kie.dmn.feel.lang.ast.TypeNode;
 import org.kie.dmn.feel.lang.ast.UnaryTestListNode;
 import org.kie.dmn.feel.lang.ast.UnaryTestNode;
+import org.kie.dmn.feel.lang.ast.visitor.DefaultedVisitor;
 
 public class ASTUnaryTestTransform extends DefaultedVisitor<ASTUnaryTestTransform.UnaryTestSubexpr> {
 
@@ -60,22 +60,18 @@ public class ASTUnaryTestTransform extends DefaultedVisitor<ASTUnaryTestTransfor
                 collect.add(accept.node);
             }
         }
-        return new TopLevel(
-                ASTBuilderFactory.newUnaryTestListNode(n.getParserRuleContext(), collect, n.getState()));
+        return new TopLevel(new UnaryTestListNode(collect, n.getState()).copyLocationAttributesFrom(n));
     }
 
     private BaseNode rewriteToUnaryTestExpr(BaseNode node) {
-        return ASTBuilderFactory.newUnaryTestNode(
-                node.getParserRuleContext(), "test", node);
+        return new UnaryTestNode("test", node).copyLocationAttributesFrom(node);
     }
 
     public BaseNode rewriteToUnaryEqInExpr(BaseNode node) {
         if (node instanceof ListNode || node instanceof RangeNode) {
-            return ASTBuilderFactory.newUnaryTestNode(
-                    node.getParserRuleContext(), "in", node);
+            return new UnaryTestNode("in", node).copyLocationAttributesFrom(node);
         } else {
-            return ASTBuilderFactory.newUnaryTestNode(
-                    node.getParserRuleContext(), "=", node);
+            return new UnaryTestNode("=", node).copyLocationAttributesFrom(node);
         }
     }
 
@@ -110,7 +106,7 @@ public class ASTUnaryTestTransform extends DefaultedVisitor<ASTUnaryTestTransfor
     }
 
     @Override
-    public UnaryTestSubexpr visit(TypeNode n) {
+    public UnaryTestSubexpr visit(CTypeNode n) {
         return new SimpleUnaryExpression(n);
     }
 

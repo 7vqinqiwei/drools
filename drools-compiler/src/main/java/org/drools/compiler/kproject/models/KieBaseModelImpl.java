@@ -15,21 +15,6 @@
 
 package org.drools.compiler.kproject.models;
 
-import com.thoughtworks.xstream.converters.MarshallingContext;
-import com.thoughtworks.xstream.converters.UnmarshallingContext;
-import com.thoughtworks.xstream.io.HierarchicalStreamReader;
-import com.thoughtworks.xstream.io.HierarchicalStreamWriter;
-import org.drools.core.util.AbstractXStreamConverter;
-import org.drools.core.util.StringUtils;
-import org.kie.api.builder.model.KieBaseModel;
-import org.kie.api.builder.model.KieModuleModel;
-import org.kie.api.builder.model.KieSessionModel;
-import org.kie.api.builder.model.RuleTemplateModel;
-import org.kie.api.conf.DeclarativeAgendaOption;
-import org.kie.api.conf.EqualityBehaviorOption;
-import org.kie.api.conf.EventProcessingOption;
-import org.kie.api.io.ResourceType;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -41,7 +26,27 @@ import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import com.thoughtworks.xstream.converters.MarshallingContext;
+import com.thoughtworks.xstream.converters.UnmarshallingContext;
+import com.thoughtworks.xstream.io.HierarchicalStreamReader;
+import com.thoughtworks.xstream.io.HierarchicalStreamWriter;
+import org.drools.core.util.AbstractXStreamConverter;
+import org.drools.core.util.StringUtils;
+import org.kie.api.builder.model.KieBaseModel;
+import org.kie.api.builder.model.KieModuleModel;
+import org.kie.api.builder.model.KieSessionModel;
+import org.kie.api.builder.model.RuleTemplateModel;
+import org.kie.api.conf.BetaRangeIndexOption;
+import org.kie.api.conf.DeclarativeAgendaOption;
+import org.kie.api.conf.EqualityBehaviorOption;
+import org.kie.api.conf.EventProcessingOption;
+import org.kie.api.conf.KieBaseMutabilityOption;
+import org.kie.api.conf.SequentialOption;
+import org.kie.api.conf.SessionsPoolOption;
+import org.kie.api.io.ResourceType;
+
 import static org.drools.core.util.IoUtils.recursiveListFile;
+import static org.kie.api.conf.SequentialOption.YES;
 
 public class KieBaseModelImpl
         implements
@@ -55,9 +60,17 @@ public class KieBaseModelImpl
 
     private EqualityBehaviorOption       equalsBehavior = EqualityBehaviorOption.IDENTITY;
 
+    private KieBaseMutabilityOption      mutability = KieBaseMutabilityOption.ALLOWED;
+
     private EventProcessingOption        eventProcessingMode = EventProcessingOption.CLOUD;
 
     private DeclarativeAgendaOption      declarativeAgenda = DeclarativeAgendaOption.DISABLED;
+
+    private SequentialOption             sequential = SequentialOption.NO;
+
+    private SessionsPoolOption sessionsPool = SessionsPoolOption.NO;
+
+    private BetaRangeIndexOption         betaRangeIndexOption = BetaRangeIndexOption.DISABLED;
 
     private Map<String, KieSessionModel> kSessions = new HashMap<String, KieSessionModel>();
 
@@ -212,6 +225,15 @@ public class KieBaseModelImpl
         return this;
     }
 
+    public SessionsPoolOption getSessionsPool() {
+        return sessionsPool;
+    }
+
+    public KieBaseModel setSessionsPool( SessionsPoolOption sessionsPool ) {
+        this.sessionsPool = sessionsPool;
+        return this;
+    }
+
     /* (non-Javadoc)
      * @see org.kie.kproject.KieBaseModel#getEqualsBehavior()
      */
@@ -224,6 +246,15 @@ public class KieBaseModelImpl
      */
     public KieBaseModel setEqualsBehavior(EqualityBehaviorOption equalsBehaviour) {
         this.equalsBehavior = equalsBehaviour;
+        return this;
+    }
+
+    public KieBaseMutabilityOption getMutability() {
+        return mutability;
+    }
+
+    public KieBaseModel setMutability( KieBaseMutabilityOption mutability ) {
+        this.mutability = mutability;
         return this;
     }
 
@@ -248,6 +279,28 @@ public class KieBaseModelImpl
 
     public KieBaseModel setDeclarativeAgenda(DeclarativeAgendaOption declarativeAgenda) {
         this.declarativeAgenda = declarativeAgenda;
+        return this;
+    }
+
+    @Override
+    public BetaRangeIndexOption getBetaRangeIndexOption() {
+        return betaRangeIndexOption;
+    }
+
+    @Override
+    public KieBaseModel setBetaRangeIndexOption(BetaRangeIndexOption betaRangeIndexOption) {
+        this.betaRangeIndexOption = betaRangeIndexOption;
+        return this;
+    }
+
+    @Override
+    public SequentialOption getSequential() {
+        return sequential;
+    }
+
+    @Override
+    public KieBaseModel setSequential(SequentialOption sequential) {
+        this.sequential = sequential;
         return this;
     }
 
@@ -316,8 +369,20 @@ public class KieBaseModelImpl
             if ( kBase.getEqualsBehavior() != null ) {
                 writer.addAttribute( "equalsBehavior", kBase.getEqualsBehavior().toString().toLowerCase() );
             }
+            if ( kBase.getMutability() != null ) {
+                writer.addAttribute( "mutability", kBase.getMutability().toString().toLowerCase() );
+            }
             if ( kBase.getDeclarativeAgenda() != null ) {
                 writer.addAttribute( "declarativeAgenda", kBase.getDeclarativeAgenda().toString().toLowerCase() );
+            }
+            if ( kBase.getSequential() != null ) {
+                writer.addAttribute( "sequential", kBase.getSequential() == YES ? "true" : "false" );
+            }
+            if ( kBase.getSessionsPool() != null ) {
+                writer.addAttribute( "sessionsPool", "" + kBase.getSessionsPool().getSize() );
+            }
+            if ( kBase.getBetaRangeIndexOption() != null ) {
+                writer.addAttribute( "betaRangeIndex", kBase.getBetaRangeIndexOption().toString().toLowerCase() );
             }
 
             if ( kBase.getScope() != null ) {
@@ -380,9 +445,29 @@ public class KieBaseModelImpl
                 kBase.setEqualsBehavior( EqualityBehaviorOption.determineEqualityBehavior( equalsBehavior ) );
             }
 
+            String mutability = reader.getAttribute( "mutability" );
+            if ( mutability != null ) {
+                kBase.setMutability( KieBaseMutabilityOption.determineMutability( mutability ) );
+            }
+
             String declarativeAgenda = reader.getAttribute( "declarativeAgenda" );
             if ( declarativeAgenda != null ) {
                 kBase.setDeclarativeAgenda( DeclarativeAgendaOption.determineDeclarativeAgenda( declarativeAgenda ) );
+            }
+
+            String sequential = reader.getAttribute( "sequential" );
+            if ( sequential != null ) {
+                kBase.setSequential( SequentialOption.determineSequential( sequential ) );
+            }
+
+            String sessionsPool = reader.getAttribute( "sessionsPool" );
+            if ( sessionsPool != null ) {
+                kBase.setSessionsPool( SessionsPoolOption.get( Integer.parseInt( sessionsPool ) ) );
+            }
+
+            String betaRangeIndex = reader.getAttribute( "betaRangeIndex" );
+            if ( betaRangeIndex != null ) {
+                kBase.setBetaRangeIndexOption( BetaRangeIndexOption.determineBetaRangeIndex( betaRangeIndex ) );
             }
 
             String scope = reader.getAttribute( "scope" );
@@ -432,7 +517,7 @@ public class KieBaseModelImpl
 
     @Override
     public String toString() {
-        return "KieBaseModelImpl [name=" + name + ", includes=" + includes + ", packages=" + getPackages() + ", equalsBehavior=" + equalsBehavior + ", eventProcessingMode=" + eventProcessingMode + ", kSessions=" + kSessions + "]";
+        return "KieBaseModelImpl [name=" + name + ", includes=" + includes + ", packages=" + getPackages() + ", equalsBehavior=" + equalsBehavior + ", mutability=" + mutability + ", eventProcessingMode=" + eventProcessingMode + ", kSessions=" + kSessions + "]";
     }
 
     @Override

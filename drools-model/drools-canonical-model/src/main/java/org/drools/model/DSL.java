@@ -1,5 +1,5 @@
 /*
- * Copyright 2005 JBoss Inc
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -8,6 +8,7 @@
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
+ *
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
@@ -16,7 +17,9 @@
 
 package org.drools.model;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import org.drools.model.consequences.ConsequenceBuilder;
 import org.drools.model.datasources.DataStore;
@@ -29,6 +32,7 @@ import org.drools.model.functions.Function0;
 import org.drools.model.functions.Function1;
 import org.drools.model.functions.Function2;
 import org.drools.model.functions.Function3;
+import org.drools.model.functions.Function4;
 import org.drools.model.functions.Operator;
 import org.drools.model.functions.Predicate1;
 import org.drools.model.functions.Predicate10;
@@ -62,11 +66,12 @@ import org.drools.model.functions.temporal.TemporalPredicate;
 import org.drools.model.impl.AnnotationValueImpl;
 import org.drools.model.impl.DeclarationImpl;
 import org.drools.model.impl.EntryPointImpl;
+import org.drools.model.impl.Exchange;
 import org.drools.model.impl.From0Impl;
 import org.drools.model.impl.From1Impl;
 import org.drools.model.impl.From2Impl;
 import org.drools.model.impl.From3Impl;
-import org.drools.model.impl.Exchange;
+import org.drools.model.impl.From4Impl;
 import org.drools.model.impl.GlobalImpl;
 import org.drools.model.impl.PrototypeImpl;
 import org.drools.model.impl.PrototypeVariableImpl;
@@ -86,8 +91,11 @@ import org.drools.model.view.Expr1ViewItem;
 import org.drools.model.view.Expr1ViewItemImpl;
 import org.drools.model.view.Expr2ViewItem;
 import org.drools.model.view.Expr2ViewItemImpl;
+import org.drools.model.view.Expr3ViewItem;
 import org.drools.model.view.Expr3ViewItemImpl;
+import org.drools.model.view.Expr4ViewItem;
 import org.drools.model.view.Expr4ViewItemImpl;
+import org.drools.model.view.Expr5ViewItem;
 import org.drools.model.view.Expr5ViewItemImpl;
 import org.drools.model.view.Expr6ViewItemImpl;
 import org.drools.model.view.Expr7ViewItemImpl;
@@ -95,8 +103,11 @@ import org.drools.model.view.Expr8ViewItemImpl;
 import org.drools.model.view.Expr9ViewItemImpl;
 import org.drools.model.view.ExprViewItem;
 import org.drools.model.view.FixedValueItem;
+import org.drools.model.view.GroupByExprViewItem;
 import org.drools.model.view.ViewItem;
 import org.drools.model.view.ViewItemBuilder;
+
+import static org.drools.model.functions.FunctionUtils.toFunctionN;
 
 public class DSL {
 
@@ -184,6 +195,38 @@ public class DSL {
         return new DeclarationImpl<T>( type, name ).setSource( source ).setWindow( window );
     }
 
+    public static <T> Declaration<T> declarationOf( Class<T> type, DomainClassMetadata metadata ) {
+        return new DeclarationImpl<T>( type ).setMetadata( metadata );
+    }
+
+    public static <T> Declaration<T> declarationOf( Class<T> type, DomainClassMetadata metadata, String name ) {
+        return new DeclarationImpl<T>( type, name ).setMetadata( metadata );
+    }
+
+    public static <T> Declaration<T> declarationOf( Class<T> type, DomainClassMetadata metadata, DeclarationSource source ) {
+        return new DeclarationImpl<T>( type ).setMetadata( metadata ).setSource( source );
+    }
+
+    public static <T> Declaration<T> declarationOf( Class<T> type, DomainClassMetadata metadata, String name, DeclarationSource source ) {
+        return new DeclarationImpl<T>( type, name ).setMetadata( metadata ).setSource( source );
+    }
+
+    public static <T> Declaration<T> declarationOf( Class<T> type, DomainClassMetadata metadata, Window window ) {
+        return new DeclarationImpl<T>( type ).setMetadata( metadata ).setWindow( window );
+    }
+
+    public static <T> Declaration<T> declarationOf( Class<T> type, DomainClassMetadata metadata, String name, Window window ) {
+        return new DeclarationImpl<T>( type, name ).setMetadata( metadata ).setWindow( window );
+    }
+
+    public static <T> Declaration<T> declarationOf( Class<T> type, DomainClassMetadata metadata, DeclarationSource source, Window window ) {
+        return new DeclarationImpl<T>( type ).setMetadata( metadata ).setSource( source ).setWindow( window );
+    }
+
+    public static <T> Declaration<T> declarationOf( Class<T> type, DomainClassMetadata metadata, String name, DeclarationSource source, Window window ) {
+        return new DeclarationImpl<T>( type, name ).setMetadata( metadata ).setSource( source ).setWindow( window );
+    }
+
     public static <T> Global<T> globalOf( Class<T> type, String pkg ) {
         return new GlobalImpl<T>( type, pkg );
     }
@@ -260,6 +303,10 @@ public class DSL {
         return new From3Impl<>( var1, var2, var3, new Function3.Impl<>(provider) );
     }
 
+    public static <A,B,C,D> From<A> from( Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Function4<A, B, C, D, ?> provider ) {
+        return new From4Impl<>(var1, var2, var3, var4, new Function4.Impl<>(provider) );
+    }
+
     public static <T> From<T> reactiveFrom( Variable<T> variable, Function1<T, ?> provider ) {
         return new From1Impl<>( variable, provider, true );
     }
@@ -313,23 +360,23 @@ public class DSL {
         return new Expr2ViewItemImpl<>( exprId, var1, var2, new Predicate2.Impl<>(predicate));
     }
 
-    public static <T, U, X> ExprViewItem<T> expr(String exprId, Variable<T> var1, Variable<U> var2, Variable<X> var3, Predicate3<T, U, X> predicate) {
+    public static <T, U, X> Expr3ViewItem<T, U, X> expr( String exprId, Variable<T> var1, Variable<U> var2, Variable<X> var3, Predicate3<T, U, X> predicate) {
         return new Expr3ViewItemImpl<>(exprId, var1, var2, var3, new Predicate3.Impl<>(predicate));
     }
 
-    public static <A, B, C, D> ExprViewItem<A> expr(Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Predicate4<A, B, C, D> predicate) {
+    public static <A, B, C, D> Expr4ViewItem<A, B, C, D> expr( Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Predicate4<A, B, C, D> predicate) {
         return new Expr4ViewItemImpl<>(var1, var2, var3, var4, new Predicate4.Impl<>(predicate));
     }
 
-    public static <A, B, C, D> ExprViewItem<A> expr(String exprId, Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Predicate4<A, B, C, D> predicate) {
+    public static <A, B, C, D> Expr4ViewItem<A, B, C, D> expr(String exprId, Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Predicate4<A, B, C, D> predicate) {
         return new Expr4ViewItemImpl<>(exprId, var1, var2, var3, var4, new Predicate4.Impl<>(predicate));
     }
 
-    public static <A, B, C, D, E> ExprViewItem<A> expr(Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Predicate5<A, B, C, D, E> predicate) {
+    public static <A, B, C, D, E> Expr5ViewItem<A, B, C, D, E> expr( Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Predicate5<A, B, C, D, E> predicate) {
         return new Expr5ViewItemImpl<>(var1, var2, var3, var4, var5, new Predicate5.Impl<>(predicate));
     }
 
-    public static <A, B, C, D, E> ExprViewItem<A> expr(String exprId, Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Predicate5<A, B, C, D, E> predicate) {
+    public static <A, B, C, D, E> Expr5ViewItem<A, B, C, D, E> expr(String exprId, Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Predicate5<A, B, C, D, E> predicate) {
         return new Expr5ViewItemImpl<>(exprId, var1, var2, var3, var4, var5, new Predicate5.Impl<>(predicate));
     }
 
@@ -350,62 +397,62 @@ public class DSL {
     }
 
     public static <A, B, C, D, E, F, G, H> ExprViewItem<A> expr(Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Variable<F> var6, Variable<G> var7,
-                                                                   Variable<H> var8,
-                                                                   Predicate8<A, B, C, D, E, F, G, H> predicate) {
+                                                                Variable<H> var8,
+                                                                Predicate8<A, B, C, D, E, F, G, H> predicate) {
         return new Expr8ViewItemImpl<>(var1, var2, var3, var4, var5, var6, var7, var8, new Predicate8.Impl<>(predicate));
     }
 
     public static <A, B, C, D, E, F, G, H> ExprViewItem<A> expr(String exprId, Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Variable<F> var6, Variable<G> var7,
-                                                                   Variable<H> var8,
-                                                                   Predicate8<A, B, C, D, E, F, G, H> predicate) {
+                                                                Variable<H> var8,
+                                                                Predicate8<A, B, C, D, E, F, G, H> predicate) {
         return new Expr8ViewItemImpl<>(exprId, var1, var2, var3, var4, var5, var6, var7, var8, new Predicate8.Impl<>(predicate));
     }
 
     public static <A, B, C, D, E, F, G, H, I> ExprViewItem<A> expr(Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Variable<F> var6, Variable<G> var7,
-                                                                      Variable<H> var8, Variable<I> var9,
-                                                                      Predicate9<A, B, C, D, E, F, G, H, I> predicate) {
+                                                                   Variable<H> var8, Variable<I> var9,
+                                                                   Predicate9<A, B, C, D, E, F, G, H, I> predicate) {
         return new Expr9ViewItemImpl<>(var1, var2, var3, var4, var5, var6, var7, var8, var9, new Predicate9.Impl<>(predicate));
     }
 
     public static <A, B, C, D, E, F, G, H, I> ExprViewItem<A> expr(String exprId, Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Variable<F> var6, Variable<G> var7,
-                                                                      Variable<H> var8, Variable<I> var9,
-                                                                      Predicate9<A, B, C, D, E, F, G, H, I> predicate) {
+                                                                   Variable<H> var8, Variable<I> var9,
+                                                                   Predicate9<A, B, C, D, E, F, G, H, I> predicate) {
         return new Expr9ViewItemImpl<>(exprId, var1, var2, var3, var4, var5, var6, var7, var8, var9, new Predicate9.Impl<>(predicate));
     }
 
     public static <A, B, C, D, E, F, G, H, I, J> ExprViewItem<A> expr(Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Variable<F> var6, Variable<G> var7,
-                                                                         Variable<H> var8, Variable<I> var9, Variable<J> var10,
-                                                                         Predicate10<A, B, C, D, E, F, G, H, I, J> predicate) {
+                                                                      Variable<H> var8, Variable<I> var9, Variable<J> var10,
+                                                                      Predicate10<A, B, C, D, E, F, G, H, I, J> predicate) {
         return new Expr10ViewItemImpl<>(var1, var2, var3, var4, var5, var6, var7, var8, var9, var10, new Predicate10.Impl<>(predicate));
     }
 
     public static <A, B, C, D, E, F, G, H, I, J> ExprViewItem<A> expr(String exprId, Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Variable<F> var6, Variable<G> var7,
-                                                                         Variable<H> var8, Variable<I> var9, Variable<J> var10,
-                                                                         Predicate10<A, B, C, D, E, F, G, H, I, J> predicate) {
+                                                                      Variable<H> var8, Variable<I> var9, Variable<J> var10,
+                                                                      Predicate10<A, B, C, D, E, F, G, H, I, J> predicate) {
         return new Expr10ViewItemImpl<>(exprId, var1, var2, var3, var4, var5, var6, var7, var8, var9, var10, new Predicate10.Impl<>(predicate));
     }
 
     public static <A, B, C, D, E, F, G, H, I, J, K> ExprViewItem<A> expr(Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Variable<F> var6, Variable<G> var7,
-                                                                            Variable<H> var8, Variable<I> var9, Variable<J> var10, Variable<K> var11,
-                                                                            Predicate11<A, B, C, D, E, F, G, H, I, J, K> predicate) {
+                                                                         Variable<H> var8, Variable<I> var9, Variable<J> var10, Variable<K> var11,
+                                                                         Predicate11<A, B, C, D, E, F, G, H, I, J, K> predicate) {
         return new Expr11ViewItemImpl<>(var1, var2, var3, var4, var5, var6, var7, var8, var9, var10, var11, new Predicate11.Impl<>(predicate));
     }
 
     public static <A, B, C, D, E, F, G, H, I, J, K> ExprViewItem<A> expr(String exprId, Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Variable<F> var6, Variable<G> var7,
-                                                                            Variable<H> var8, Variable<I> var9, Variable<J> var10, Variable<K> var11,
-                                                                            Predicate11<A, B, C, D, E, F, G, H, I, J, K> predicate) {
+                                                                         Variable<H> var8, Variable<I> var9, Variable<J> var10, Variable<K> var11,
+                                                                         Predicate11<A, B, C, D, E, F, G, H, I, J, K> predicate) {
         return new Expr11ViewItemImpl<>(exprId, var1, var2, var3, var4, var5, var6, var7, var8, var9, var10, var11, new Predicate11.Impl<>(predicate));
     }
 
     public static <A, B, C, D, E, F, G, H, I, J, K, L> ExprViewItem<A> expr(Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Variable<F> var6, Variable<G> var7,
-                                                                               Variable<H> var8, Variable<I> var9, Variable<J> var10, Variable<K> var11, Variable<L> var12,
-                                                                               Predicate12<A, B, C, D, E, F, G, H, I, J, K, L> predicate) {
+                                                                            Variable<H> var8, Variable<I> var9, Variable<J> var10, Variable<K> var11, Variable<L> var12,
+                                                                            Predicate12<A, B, C, D, E, F, G, H, I, J, K, L> predicate) {
         return new Expr12ViewItemImpl<>(var1, var2, var3, var4, var5, var6, var7, var8, var9, var10, var11, var12, new Predicate12.Impl<>(predicate));
     }
 
     public static <A, B, C, D, E, F, G, H, I, J, K, L> ExprViewItem<A> expr(String exprId, Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<E> var5, Variable<F> var6, Variable<G> var7,
-                                                                               Variable<H> var8, Variable<I> var9, Variable<J> var10, Variable<K> var11, Variable<L> var12,
-                                                                               Predicate12<A, B, C, D, E, F, G, H, I, J, K, L> predicate) {
+                                                                            Variable<H> var8, Variable<I> var9, Variable<J> var10, Variable<K> var11, Variable<L> var12,
+                                                                            Predicate12<A, B, C, D, E, F, G, H, I, J, K, L> predicate) {
         return new Expr12ViewItemImpl<>(exprId, var1, var2, var3, var4, var5, var6, var7, var8, var9, var10, var11, var12, new Predicate12.Impl<>(predicate));
     }
 
@@ -446,19 +493,67 @@ public class DSL {
     // -- Accumulate Functions --
 
     public static <T> ExprViewItem<T> accumulate(ViewItem<?> viewItem, AccumulateFunction firstFunction, AccumulateFunction... otherFunctions) {
+        return new AccumulateExprViewItem(viewItem, accumulateFunctionsOf( firstFunction, otherFunctions ));
+    }
+
+    private static AccumulateFunction[] accumulateFunctionsOf( AccumulateFunction firstFunction, AccumulateFunction[] otherFunctions ) {
         AccumulateFunction[] functions = new AccumulateFunction[otherFunctions.length+1];
         functions[0] = firstFunction;
         System.arraycopy( otherFunctions, 0, functions, 1, otherFunctions.length );
-        return new AccumulateExprViewItem(viewItem, functions);
+        return functions;
     }
 
     // Legay case - source is defined in the generated Invoker class
     public static AccumulateFunction accFunction( Class<?> accFunctionClass) {
-        return new AccumulateFunction(null, accFunctionClass);
+        return accFunction( accFunctionClass, null );
     }
 
     public static AccumulateFunction accFunction( Class<?> accFunctionClass, Argument source) {
-        return new AccumulateFunction(source, accFunctionClass);
+        return accFunction( classToSupplier( accFunctionClass ), source);
+    }
+
+    public static AccumulateFunction accFunction( Supplier<?> functionSupplier ) {
+        return accFunction(functionSupplier, null);
+    }
+
+    public static AccumulateFunction accFunction( Supplier<?> functionSupplier, Argument source) {
+        return new AccumulateFunction(source, functionSupplier);
+    }
+
+    private static Supplier<?> classToSupplier(Class<?> cls) {
+        return () -> {
+            try {
+                return cls.getConstructor().newInstance();
+            } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+                throw new RuntimeException( e );
+            }
+        };
+    }
+
+    // -- GroupBy --
+
+    public static <T, A, K> ExprViewItem<T> groupBy(ViewItem<T> viewItem,
+                                                    Variable<A> var1, Variable<K> varKey, Function1<A, K> groupingFunction,
+                                                    AccumulateFunction... accFunctions) {
+        return new GroupByExprViewItem<T, K>( viewItem, new Variable[] { var1 }, varKey, toFunctionN( groupingFunction ), accFunctions );
+    }
+
+    public static <T, A, B, K> ExprViewItem<T> groupBy(ViewItem<T> viewItem,
+                                                       Variable<A> var1, Variable<B> var2, Variable<K> varKey, Function2<A, B, K> groupingFunction,
+                                                       AccumulateFunction... accFunctions) {
+        return new GroupByExprViewItem<T, K>( viewItem, new Variable[] { var1, var2 }, varKey, toFunctionN( groupingFunction ), accFunctions );
+    }
+
+    public static <T, A, B, C, K> ExprViewItem<T> groupBy(ViewItem<T> viewItem,
+                                                          Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<K> varKey, Function3<A, B, C, K> groupingFunction,
+                                                          AccumulateFunction... accFunctions) {
+        return new GroupByExprViewItem<T, K>( viewItem, new Variable[] { var1, var2, var3 }, varKey, toFunctionN( groupingFunction ), accFunctions );
+    }
+
+    public static <T, A, B, C, D, K> ExprViewItem<T> groupBy(ViewItem<T> viewItem,
+                                                             Variable<A> var1, Variable<B> var2, Variable<C> var3, Variable<D> var4, Variable<K> varKey, Function4<A, B, C, D, K> groupingFunction,
+                                                             AccumulateFunction... accFunctions) {
+        return new GroupByExprViewItem<T, K>( viewItem, new Variable[] { var1, var2, var3, var4 }, varKey, toFunctionN( groupingFunction ), accFunctions );
     }
 
     // -- Temporal Constraints --
@@ -621,58 +716,100 @@ public class DSL {
         return new ConsequenceBuilder._0(language, ruleClass, script);
     }
 
-    public static <A> ConsequenceBuilder._1<A> on(Variable<A> dec1) {
-        return new ConsequenceBuilder._1(dec1);
+    public static <T1> ConsequenceBuilder._1<T1> on(Variable<T1> arg1) {
+        return new ConsequenceBuilder._1(arg1);
     }
 
-    public static <A, B> ConsequenceBuilder._2<A, B> on(Variable<A> decl1, Variable<B> decl2) {
-        return new ConsequenceBuilder._2(decl1, decl2);
+    public static <T1, T2> ConsequenceBuilder._2<T1, T2> on(Variable<T1> arg1, Variable<T2> arg2) {
+        return new ConsequenceBuilder._2(arg1, arg2);
     }
 
-    public static <A, B, C> ConsequenceBuilder._3<A, B, C> on(Variable<A> decl1, Variable<B> decl2, Variable<C> decl3) {
-        return new ConsequenceBuilder._3(decl1, decl2, decl3);
+    public static <T1, T2, T3> ConsequenceBuilder._3<T1, T2, T3> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3) {
+        return new ConsequenceBuilder._3(arg1, arg2, arg3);
     }
 
-    public static <A, B, C, D> ConsequenceBuilder._4<A, B, C, D> on(Variable<A> decl1, Variable<B> decl2, Variable<C> decl3, Variable<D> decl4) {
-        return new ConsequenceBuilder._4(decl1, decl2, decl3, decl4);
+    public static <T1, T2, T3, T4> ConsequenceBuilder._4<T1, T2, T3, T4> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4) {
+        return new ConsequenceBuilder._4(arg1, arg2, arg3, arg4);
     }
 
-    public static <A, B, C, D, E> ConsequenceBuilder._5<A, B, C, D, E> on(Variable<A> decl1, Variable<B> decl2, Variable<C> decl3, Variable<D> decl4, Variable<E> decl5) {
-        return new ConsequenceBuilder._5(decl1, decl2, decl3, decl4, decl5);
+    public static <T1, T2, T3, T4, T5> ConsequenceBuilder._5<T1, T2, T3, T4, T5> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5) {
+        return new ConsequenceBuilder._5(arg1, arg2, arg3, arg4, arg5);
     }
 
-    public static <A, B, C, D, E, F> ConsequenceBuilder._6<A, B, C, D, E, F> on(Variable<A> decl1, Variable<B> decl2, Variable<C> decl3, Variable<D> decl4, Variable<E> decl5, Variable<F> decl6) {
-        return new ConsequenceBuilder._6(decl1, decl2, decl3, decl4, decl5, decl6);
+    public static <T1, T2, T3, T4, T5, T6> ConsequenceBuilder._6<T1, T2, T3, T4, T5, T6> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6) {
+        return new ConsequenceBuilder._6(arg1, arg2, arg3, arg4, arg5, arg6);
     }
 
-    public static <A, B, C, D, E, F, G> ConsequenceBuilder._7<A, B, C, D, E, F, G> on(Variable<A> decl1, Variable<B> decl2, Variable<C> decl3, Variable<D> decl4, Variable<E> decl5, Variable<F> decl6,
-                                                                                      Variable<G> decl7) {
-        return new ConsequenceBuilder._7(decl1, decl2, decl3, decl4, decl5, decl6, decl7);
+    public static <T1, T2, T3, T4, T5, T6, T7> ConsequenceBuilder._7<T1, T2, T3, T4, T5, T6, T7> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7) {
+        return new ConsequenceBuilder._7(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
     }
 
-    public static <A, B, C, D, E, F, G, H> ConsequenceBuilder._8<A, B, C, D, E, F, G, H> on(Variable<A> decl1, Variable<B> decl2, Variable<C> decl3, Variable<D> decl4, Variable<E> decl5, Variable<F> decl6,
-                                                                                            Variable<G> decl7, Variable<H> decl8) {
-        return new ConsequenceBuilder._8(decl1, decl2, decl3, decl4, decl5, decl6, decl7, decl8);
+    public static <T1, T2, T3, T4, T5, T6, T7, T8> ConsequenceBuilder._8<T1, T2, T3, T4, T5, T6, T7, T8> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8) {
+        return new ConsequenceBuilder._8(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
     }
 
-    public static <A, B, C, D, E, F, G, H, I> ConsequenceBuilder._9<A, B, C, D, E, F, G, H, I> on(Variable<A> decl1, Variable<B> decl2, Variable<C> decl3, Variable<D> decl4, Variable<E> decl5, Variable<F> decl6,
-                                                                                                  Variable<G> decl7, Variable<H> decl8, Variable<I> decl9) {
-        return new ConsequenceBuilder._9(decl1, decl2, decl3, decl4, decl5, decl6, decl7, decl8, decl9);
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9> ConsequenceBuilder._9<T1, T2, T3, T4, T5, T6, T7, T8, T9> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9) {
+        return new ConsequenceBuilder._9(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
     }
 
-    public static <A, B, C, D, E, F, G, H, I, J> ConsequenceBuilder._10<A, B, C, D, E, F, G, H, I, J> on(Variable<A> decl1, Variable<B> decl2, Variable<C> decl3, Variable<D> decl4, Variable<E> decl5, Variable<F> decl6,
-                                                                                                         Variable<G> decl7, Variable<H> decl8, Variable<I> decl9, Variable<J> decl10) {
-        return new ConsequenceBuilder._10(decl1, decl2, decl3, decl4, decl5, decl6, decl7, decl8, decl9, decl10);
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> ConsequenceBuilder._10<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10) {
+        return new ConsequenceBuilder._10(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10);
     }
 
-    public static <A, B, C, D, E, F, G, H, I, J, K> ConsequenceBuilder._11<A, B, C, D, E, F, G, H, I, J, K> on(Variable<A> decl1, Variable<B> decl2, Variable<C> decl3, Variable<D> decl4, Variable<E> decl5, Variable<F> decl6,
-                                                                                                               Variable<G> decl7, Variable<H> decl8, Variable<I> decl9, Variable<J> decl10, Variable<K> decl11) {
-        return new ConsequenceBuilder._11(decl1, decl2, decl3, decl4, decl5, decl6, decl7, decl8, decl9, decl10, decl11);
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> ConsequenceBuilder._11<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11) {
+        return new ConsequenceBuilder._11(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11);
     }
 
-    public static <A, B, C, D, E, F, G, H, I, J, K, L> ConsequenceBuilder._12<A, B, C, D, E, F, G, H, I, J, K, L> on(Variable<A> decl1, Variable<B> decl2, Variable<C> decl3, Variable<D> decl4, Variable<E> decl5, Variable<F> decl6,
-                                                                                                                     Variable<G> decl7, Variable<H> decl8, Variable<I> decl9, Variable<J> decl10, Variable<K> decl11, Variable<L> decl12) {
-        return new ConsequenceBuilder._12(decl1, decl2, decl3, decl4, decl5, decl6, decl7, decl8, decl9, decl10, decl11, decl12);
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> ConsequenceBuilder._12<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12) {
+        return new ConsequenceBuilder._12(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> ConsequenceBuilder._13<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13) {
+        return new ConsequenceBuilder._13(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> ConsequenceBuilder._14<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13, Variable<T14> arg14) {
+        return new ConsequenceBuilder._14(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> ConsequenceBuilder._15<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13, Variable<T14> arg14, Variable<T15> arg15) {
+        return new ConsequenceBuilder._15(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16> ConsequenceBuilder._16<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13, Variable<T14> arg14, Variable<T15> arg15, Variable<T16> arg16) {
+        return new ConsequenceBuilder._16(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17> ConsequenceBuilder._17<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13, Variable<T14> arg14, Variable<T15> arg15, Variable<T16> arg16, Variable<T17> arg17) {
+        return new ConsequenceBuilder._17(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18> ConsequenceBuilder._18<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13, Variable<T14> arg14, Variable<T15> arg15, Variable<T16> arg16, Variable<T17> arg17, Variable<T18> arg18) {
+        return new ConsequenceBuilder._18(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19> ConsequenceBuilder._19<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13, Variable<T14> arg14, Variable<T15> arg15, Variable<T16> arg16, Variable<T17> arg17, Variable<T18> arg18, Variable<T19> arg19) {
+        return new ConsequenceBuilder._19(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, arg19);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20> ConsequenceBuilder._20<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13, Variable<T14> arg14, Variable<T15> arg15, Variable<T16> arg16, Variable<T17> arg17, Variable<T18> arg18, Variable<T19> arg19, Variable<T20> arg20) {
+        return new ConsequenceBuilder._20(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, arg19, arg20);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21> ConsequenceBuilder._21<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13, Variable<T14> arg14, Variable<T15> arg15, Variable<T16> arg16, Variable<T17> arg17, Variable<T18> arg18, Variable<T19> arg19, Variable<T20> arg20, Variable<T21> arg21) {
+        return new ConsequenceBuilder._21(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, arg19, arg20, arg21);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22> ConsequenceBuilder._22<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13, Variable<T14> arg14, Variable<T15> arg15, Variable<T16> arg16, Variable<T17> arg17, Variable<T18> arg18, Variable<T19> arg19, Variable<T20> arg20, Variable<T21> arg21, Variable<T22> arg22) {
+        return new ConsequenceBuilder._22(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, arg19, arg20, arg21, arg22);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23> ConsequenceBuilder._23<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13, Variable<T14> arg14, Variable<T15> arg15, Variable<T16> arg16, Variable<T17> arg17, Variable<T18> arg18, Variable<T19> arg19, Variable<T20> arg20, Variable<T21> arg21, Variable<T22> arg22, Variable<T23> arg23) {
+        return new ConsequenceBuilder._23(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, arg19, arg20, arg21, arg22, arg23);
+    }
+
+    public static <T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24> ConsequenceBuilder._24<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24> on(Variable<T1> arg1, Variable<T2> arg2, Variable<T3> arg3, Variable<T4> arg4, Variable<T5> arg5, Variable<T6> arg6, Variable<T7> arg7, Variable<T8> arg8, Variable<T9> arg9, Variable<T10> arg10, Variable<T11> arg11, Variable<T12> arg12, Variable<T13> arg13, Variable<T14> arg14, Variable<T15> arg15, Variable<T16> arg16, Variable<T17> arg17, Variable<T18> arg18, Variable<T19> arg19, Variable<T20> arg20, Variable<T21> arg21, Variable<T22> arg22, Variable<T23> arg23, Variable<T24> arg24) {
+        return new ConsequenceBuilder._24(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9, arg10, arg11, arg12, arg13, arg14, arg15, arg16, arg17, arg18, arg19, arg20, arg21, arg22, arg23, arg24);
     }
 
     public static ConsequenceBuilder._N on(Variable... declarations) {
@@ -694,6 +831,14 @@ public class DSL {
         } catch (Exception e) {
             throw new RuntimeException( e );
         }
+    }
+
+    public static <R> DynamicValueSupplier<R> supply( R value ) {
+        return new DynamicValueSupplier._0( () -> value );
+    }
+
+    public static <R> DynamicValueSupplier<R> supply( Function0<R> f ) {
+        return new DynamicValueSupplier._0( f );
     }
 
     public static <A, R> DynamicValueSupplier<R> supply( Variable<A> var1, Function1<A, R> f ) {

@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
+import org.apache.poi.openxml4j.util.ZipSecureFile;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.CellValue;
@@ -54,6 +54,19 @@ public class ExcelParser
 
     private static final Logger log = LoggerFactory.getLogger( ExcelParser.class );
 
+    private static void initMinInflateRatio() {
+        String minInflateRatio = System.getProperty( "drools.excelParser.minInflateRatio" );
+        if (minInflateRatio != null) {
+            try {
+                ZipSecureFile.setMinInflateRatio( Double.parseDouble( minInflateRatio ) );
+            } catch (NumberFormatException nfe) {
+                log.error( "Invalid value '" + minInflateRatio + "' for property drools.excelParser.minInflateRatio. It has to be a double" );
+            }
+        } else {
+            ZipSecureFile.setMinInflateRatio( 0.01 ); // default value
+        }
+    }
+
     public static final String DEFAULT_RULESHEET_NAME = "Decision Tables";
     private Map<String, List<DataListener>> _listeners = new HashMap<String, List<DataListener>>();
     private boolean _useFirstSheet;
@@ -64,12 +77,14 @@ public class ExcelParser
      */
     public ExcelParser( final Map<String, List<DataListener>> sheetListeners ) {
         this._listeners = sheetListeners;
+        initMinInflateRatio();
     }
 
     public ExcelParser( final List<DataListener> sheetListeners ) {
         this._listeners.put( ExcelParser.DEFAULT_RULESHEET_NAME,
                              sheetListeners );
         this._useFirstSheet = true;
+        initMinInflateRatio();
     }
 
     public ExcelParser( final DataListener listener ) {
@@ -78,14 +93,12 @@ public class ExcelParser
         this._listeners.put( ExcelParser.DEFAULT_RULESHEET_NAME,
                              listeners );
         this._useFirstSheet = true;
+        initMinInflateRatio();
     }
 
     public void parseFile( InputStream inStream ) {
         try {
             parseWorkbook( WorkbookFactory.create( inStream ) );
-        } catch ( InvalidFormatException e ) {
-            throw new DecisionTableParseException( "An error occurred opening the workbook. It is possible that the encoding of the document did not match the encoding of the reader.",
-                                                   e );
         } catch ( IOException e ) {
             throw new DecisionTableParseException( "Failed to open Excel stream, " + "please check that the content is xls97 format.",
                                                    e );
@@ -95,9 +108,6 @@ public class ExcelParser
     public void parseFile( File file ) {
         try {
             parseWorkbook( WorkbookFactory.create( file, (String)null, true ) );
-        } catch ( InvalidFormatException e ) {
-            throw new DecisionTableParseException( "An error occurred opening the workbook. It is possible that the encoding of the document did not match the encoding of the reader.",
-                                                   e );
         } catch ( IOException e ) {
             throw new DecisionTableParseException( "Failed to open Excel stream, " + "please check that the content is xls97 format.",
                                                    e );
@@ -106,27 +116,27 @@ public class ExcelParser
 
     public void parseWorkbook( Workbook workbook ) {
         try {
-            if ( _useFirstSheet ) {
-                Sheet sheet = workbook.getSheetAt( 0 );
-                processSheet( sheet, _listeners.get( DEFAULT_RULESHEET_NAME ) );
-            } else {
-                for ( String sheetName : _listeners.keySet() ) {
-                    Sheet sheet = workbook.getSheet( sheetName );
-                    if ( sheet == null ) {
-                        throw new IllegalStateException( "Could not find the sheetName (" + sheetName
-                                                         + ") in the workbook sheetNames." );
-                    }
-                    processSheet                              ( sheet,
-                                  _listeners.get( sheetName ) );
-
-                }
-            }
-        } finally {
             try {
+                if ( _useFirstSheet ) {
+                    Sheet sheet = workbook.getSheetAt( 0 );
+                    processSheet( sheet, _listeners.get( DEFAULT_RULESHEET_NAME ) );
+                } else {
+                    for ( String sheetName : _listeners.keySet() ) {
+                        Sheet sheet = workbook.getSheet( sheetName );
+                        if ( sheet == null ) {
+                            throw new IllegalStateException( "Could not find the sheetName (" + sheetName
+                                                                     + ") in the workbook sheetNames." );
+                        }
+                        processSheet                              ( sheet,
+                                                                    _listeners.get( sheetName ) );
+
+                    }
+                }
+            } finally {
                 workbook.close();
-            } catch (IOException e) {
-                throw new RuntimeException( e );
             }
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
         }
     }
 
@@ -167,16 +177,15 @@ public class ExcelParser
                     mergedColStart = cell.getColumnIndex();
                 }
 
-                switch ( cell.getCellType() ) {
-                    case Cell.CELL_TYPE_BOOLEAN:
+                switch ( cell.getCellTypeEnum() ) {
+                    case BOOLEAN:
                         newCell(listeners,
                                 i,
                                 cellNum,
                                 cell.getBooleanCellValue() ? "true" : "false",
                                 mergedColStart);
                         break;
-                    case Cell.CELL_TYPE_FORMULA:
-                        String cellValue = null;
+                    case FORMULA:
                         try {
                             newCell(listeners,
                                     i,
@@ -194,7 +203,7 @@ public class ExcelParser
                                     mergedColStart);
                         }
                         break;
-                    case Cell.CELL_TYPE_NUMERIC:
+                    case NUMERIC:
                         if ( isNumericDisabled(listeners) ) {
                             // don't get a double value. rely on DataFormatter
                         } else {
@@ -230,8 +239,8 @@ public class ExcelParser
     private String tryToReadCachedValue( Cell cell ) {
         DataFormatter formatter = new DataFormatter( Locale.ENGLISH );
         String cachedValue;
-        switch ( cell.getCachedFormulaResultType() ) {
-            case Cell.CELL_TYPE_NUMERIC:
+        switch ( cell.getCachedFormulaResultTypeEnum() ) {
+            case NUMERIC:
                 double num = cell.getNumericCellValue();
                 if ( num - Math.round( num ) != 0 ) {
                     cachedValue = String.valueOf( num );
@@ -240,15 +249,15 @@ public class ExcelParser
                 }
                 break;
 
-            case Cell.CELL_TYPE_STRING:
+            case STRING:
                 cachedValue = cell.getStringCellValue();
                 break;
 
-            case Cell.CELL_TYPE_BOOLEAN:
+            case BOOLEAN:
                 cachedValue = String.valueOf( cell.getBooleanCellValue() );
                 break;
 
-            case Cell.CELL_TYPE_ERROR:
+            case ERROR:
                 cachedValue = String.valueOf( cell.getErrorCellValue() );
                 break;
 
@@ -260,10 +269,10 @@ public class ExcelParser
     }
 
     private String getCellValue( final CellValue cv ) {
-        switch ( cv.getCellType() ) {
-            case Cell.CELL_TYPE_BOOLEAN:
+        switch ( cv.getCellTypeEnum() ) {
+            case BOOLEAN:
                 return Boolean.toString( cv.getBooleanValue() );
-            case Cell.CELL_TYPE_NUMERIC:
+            case NUMERIC:
                 return String.valueOf( cv.getNumberValue() );
         }
         return cv.getStringValue();

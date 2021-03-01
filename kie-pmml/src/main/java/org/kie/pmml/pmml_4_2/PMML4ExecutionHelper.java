@@ -24,8 +24,8 @@ import java.util.Map;
 import org.drools.core.definitions.InternalKnowledgePackage;
 import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.impl.InternalKnowledgeBase;
-import org.drools.core.impl.InternalRuleUnitExecutor;
-import org.drools.core.ruleunit.RuleUnitDescription;
+import org.drools.core.util.StringUtils;
+import org.drools.ruleunit.executor.InternalRuleUnitExecutor;
 import org.kie.api.KieBase;
 import org.kie.api.KieBaseConfiguration;
 import org.kie.api.io.Resource;
@@ -34,13 +34,15 @@ import org.kie.api.logger.KieRuntimeLogger;
 import org.kie.api.pmml.PMML4Data;
 import org.kie.api.pmml.PMML4Result;
 import org.kie.api.pmml.PMMLRequestData;
-import org.kie.api.runtime.rule.DataSource;
-import org.kie.api.runtime.rule.RuleUnit;
-import org.kie.api.runtime.rule.RuleUnitExecutor;
+import org.kie.internal.ruleunit.RuleUnitDescription;
 import org.kie.internal.utils.KieHelper;
 import org.kie.pmml.pmml_4_2.model.AbstractPMMLData;
-import org.kie.pmml.pmml_4_2.model.PMML4UnitImpl;
 import org.kie.pmml.pmml_4_2.model.mining.SegmentExecution;
+import org.drools.ruleunit.DataSource;
+import org.drools.ruleunit.RuleUnit;
+import org.drools.ruleunit.RuleUnitExecutor;
+
+import static org.drools.core.command.runtime.pmml.PmmlConstants.DEFAULT_ROOT_PACKAGE;
 
 public class PMML4ExecutionHelper {
 
@@ -215,14 +217,6 @@ public class PMML4ExecutionHelper {
         initRuleUnitExecutor();
     }
 
-    public Class<? extends RuleUnit> getRuleUnitClass() {
-        return ruleUnitClass;
-    }
-
-    public void setRuleUnitClass(Class<? extends RuleUnit> ruleUnitClass) {
-        this.ruleUnitClass = ruleUnitClass;
-    }
-
     public DataSource<PMMLRequestData> getRequestData() {
         return requestData;
     }
@@ -284,7 +278,7 @@ public class PMML4ExecutionHelper {
         }
 
         KieRuntimeLogger logger = loggerFileName != null ?
-                ((InternalRuleUnitExecutor)executor).addFileLogger(loggerFileName) : null;
+                (( InternalRuleUnitExecutor )executor).addFileLogger(loggerFileName) : null;
         try {
             requestData.insert(request);
             baseResultHolder = new PMML4Result(request.getCorrelationId());
@@ -335,7 +329,7 @@ public class PMML4ExecutionHelper {
                 if (ruleImpl != null) {
                     RuleUnitDescription descr = ikb.getRuleUnitDescriptionRegistry().getDescription(ruleImpl).orElse(null);
                     if (descr != null) {
-                        return descr.getRuleUnitClass();
+                        return (Class<? extends RuleUnit>) descr.getRuleUnitClass();
                     }
                 }
             }
@@ -350,12 +344,19 @@ public class PMML4ExecutionHelper {
     protected List<String> calculatePossiblePackageNames(String modelId, String... knownPackageNames) {
         List<String> packageNames = new ArrayList<>();
         String javaModelId = modelId.replaceAll("\\s", "");
+        String capJavaModelId = StringUtils.ucFirst(javaModelId);
         if (knownPackageNames != null && knownPackageNames.length > 0) {
             for (String knownPkgName : knownPackageNames) {
                 packageNames.add(knownPkgName + "." + javaModelId);
+                if (!javaModelId.equals(capJavaModelId)) {
+                    packageNames.add(knownPkgName + "." + capJavaModelId);
+                }
             }
         }
-        packageNames.add(PMML4UnitImpl.DEFAULT_ROOT_PACKAGE + "." + javaModelId);
+        packageNames.add(DEFAULT_ROOT_PACKAGE + "." + javaModelId);
+        if (!javaModelId.equals(capJavaModelId)) {
+            packageNames.add(DEFAULT_ROOT_PACKAGE + "." + capJavaModelId);
+        }
         return packageNames;
     }
 

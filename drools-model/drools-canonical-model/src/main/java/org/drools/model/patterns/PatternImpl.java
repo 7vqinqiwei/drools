@@ -1,6 +1,24 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ *
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.drools.model.patterns;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -80,8 +98,12 @@ public class PatternImpl<T> extends AbstractSinglePattern implements Pattern<T>,
         return constraint;
     }
 
+    public boolean hasConstraints() {
+        return this.constraint != SingleConstraint.TRUE;
+    }
+
     public void addConstraint( Constraint constraint ) {
-        this.constraint = this.constraint == SingleConstraint.TRUE ? constraint : ( (AbstractConstraint) this.constraint ).with( constraint );
+        this.constraint = hasConstraints() ? ( (AbstractConstraint) this.constraint ).with( constraint ) : constraint;
     }
 
     public void addBinding(Binding binding) {
@@ -91,6 +113,7 @@ public class PatternImpl<T> extends AbstractSinglePattern implements Pattern<T>,
         bindings.add(binding);
     }
 
+    @Override
     public Collection<Binding> getBindings() {
         return bindings != null ? bindings : Collections.emptyList();
     }
@@ -107,6 +130,7 @@ public class PatternImpl<T> extends AbstractSinglePattern implements Pattern<T>,
         }
     }
 
+    @Override
     public String[] getWatchedProps() {
         return watchedProps != null ? watchedProps.toArray( new String[watchedProps.size()] ) : new String[0];
     }
@@ -141,5 +165,23 @@ public class PatternImpl<T> extends AbstractSinglePattern implements Pattern<T>,
         if ( !ModelComponent.areEqualInModel( constraint, pattern.constraint ) ) return false;
         if ( !ModelComponent.areEqualInModel( bindings, pattern.bindings ) ) return false;
         return watchedProps != null ? watchedProps.equals( pattern.watchedProps ) : pattern.watchedProps == null;
+    }
+
+    public PatternImpl<T> negate() {
+        this.constraint = constraint.negate();
+        return this;
+    }
+
+    @Override
+    public String toString() {
+        return "PatternImpl (type: " +  type + ", " +
+                "inputVars: " + Arrays.toString(inputVariables) + ", " +
+                "outputVar: " + variable + ", " +
+                "constraint: " + constraint + ")";
+    }
+
+    @Override
+    public PatternImpl cloneCondition() {
+        return new PatternImpl(variable, (( AbstractConstraint ) constraint).cloneConstraint(), bindings == null ? null : new ArrayList<>(bindings), type);
     }
 }

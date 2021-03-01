@@ -73,11 +73,12 @@ public class PropertySpecificUtil {
     }
 
     private static BitMask calculatePatternMask(Class modifiedClass, Collection<String> listenedProperties, List<String> accessibleProperties, boolean isPositive) {
-        if (listenedProperties == null) {
+        if (listenedProperties.isEmpty()) {
             return EmptyBitMask.get();
         }
 
         BitMask mask = getEmptyPropertyReactiveMask(accessibleProperties.size());
+
         if (listenedProperties.contains( TraitableBean.TRAITSET_FIELD_NAME )) {
             if (isPositive && listenedProperties.contains( TraitableBean.TRAITSET_FIELD_NAME ) ) {
                 mask = mask.set(TRAITABLE_BIT);

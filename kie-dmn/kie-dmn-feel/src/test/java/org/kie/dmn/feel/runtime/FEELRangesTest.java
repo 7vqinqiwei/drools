@@ -25,7 +25,7 @@ import java.util.HashMap;
 
 import org.junit.runners.Parameterized;
 import org.kie.dmn.api.feel.runtime.events.FEELEvent;
-import org.kie.dmn.feel.lang.ast.RangeNode;
+import org.kie.dmn.feel.lang.types.impl.ComparablePeriod;
 import org.kie.dmn.feel.runtime.impl.RangeImpl;
 
 public class FEELRangesTest extends BaseFEELTest {
@@ -66,8 +66,8 @@ public class FEELRangesTest extends BaseFEELTest {
 
                 {"(duration(\"P1Y6M\")..duration(\"P2Y6M\"))",
                         new RangeImpl(Range.RangeBoundary.OPEN,
-                                      new RangeNode.ComparablePeriod(Period.parse("P1Y6M")),
-                                      new RangeNode.ComparablePeriod(Period.parse("P2Y6M")),
+                                      new ComparablePeriod(Period.parse("P1Y6M")),
+                                      new ComparablePeriod(Period.parse("P2Y6M")),
                                       Range.RangeBoundary.OPEN), null},
 
                 {"[1+2..8]", new RangeImpl(Range.RangeBoundary.CLOSED, BigDecimal.valueOf(3), BigDecimal.valueOf(8), Range.RangeBoundary.CLOSED), null},
@@ -151,7 +151,25 @@ public class FEELRangesTest extends BaseFEELTest {
                             put("startdate", LocalDate.of(1978, 9, 12));
                             put("enddate", LocalDate.of(1978, 10, 13));
                             put("rangedates", new RangeImpl(Range.RangeBoundary.CLOSED, LocalDate.of(1978, 9, 12), LocalDate.of(1978, 10, 13), Range.RangeBoundary.CLOSED));
-                        }}, null}
+                        }}, null},
+                
+                // Table 42:
+                {"[1..10].start included", Boolean.TRUE, null},
+                {"[1..10].start", new BigDecimal(1), null},
+                {"[1..10].end", new BigDecimal(10), null},
+                {"[1..10].end included", Boolean.TRUE, null},
+                {"(1..10].start included", Boolean.FALSE, null},
+                {"(1..10].start", new BigDecimal(1), null},
+                {"(1..10].end", new BigDecimal(10), null},
+                {"(1..10].end included", Boolean.TRUE, null},
+                {"(<=10).start included", Boolean.FALSE, null},
+                {"(<=10).start", null, null},
+                {"(<=10).end", new BigDecimal(10), null},
+                {"(<=10).end included", Boolean.TRUE, null},
+                {"(>1).start included", Boolean.FALSE, null},
+                {"(>1).start", new BigDecimal(1), null},
+                {"(>1).end", null, null},
+                {"(>1).end included", Boolean.FALSE, null},
         };
         return addAdditionalParameters(cases, false);
     }

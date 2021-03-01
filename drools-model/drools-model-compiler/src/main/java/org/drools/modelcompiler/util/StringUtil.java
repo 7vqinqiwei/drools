@@ -39,4 +39,5 @@ public class StringUtil {
     public static String fileNameToClass(String fileName) {
         return fileName.substring( 0, fileName.length() - ".class".length() ).replace( '/', '.' );
     }
+
 }

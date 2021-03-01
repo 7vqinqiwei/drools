@@ -25,6 +25,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
+import java.time.format.ResolverStyle;
 import java.time.temporal.ChronoField;
 import java.time.temporal.TemporalAccessor;
 import java.time.temporal.TemporalQueries;
@@ -35,6 +36,8 @@ import org.kie.dmn.feel.runtime.events.InvalidParametersEvent;
 
 public class TimeFunction
         extends BaseFEELFunction {
+
+    public static final TimeFunction INSTANCE = new TimeFunction();
 
     public static final DateTimeFormatter FEEL_TIME;
     static {
@@ -47,11 +50,12 @@ public class TimeFunction
                                                   .optionalStart()
                                                   .appendOffsetId()
                                                   .optionalEnd()
-                                                  .toFormatter();
+                                                  .toFormatter()
+                                                  .withResolverStyle(ResolverStyle.STRICT);
     }
 
     public TimeFunction() {
-        super( "time" );
+        super(FEELConversionFunctionNames.TIME);
     }
 
     public FEELFnResult<TemporalAccessor> invoke(@ParameterName("from") String val) {
@@ -79,6 +83,12 @@ public class TimeFunction
     }
 
     private static final BigDecimal NANO_MULT = BigDecimal.valueOf( 1000000000 );
+
+    public FEELFnResult<TemporalAccessor> invoke(
+            @ParameterName("hour") Number hour, @ParameterName("minute") Number minute,
+            @ParameterName("second") Number seconds) {
+        return invoke( hour, minute, seconds, null );
+    }
 
     public FEELFnResult<TemporalAccessor> invoke(
             @ParameterName("hour") Number hour, @ParameterName("minute") Number minute,

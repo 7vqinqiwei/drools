@@ -19,12 +19,12 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.drools.core.base.CoreComponentsBuilder;
 import org.drools.core.base.EvaluatorWrapper;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.rule.Declaration;
 import org.drools.core.spi.Tuple;
-import org.mvel2.util.Soundex;
 
 public class EvaluatorHelper {
 
@@ -82,8 +82,8 @@ public class EvaluatorHelper {
         if (value1 == null || value2 == null) {
             return false;
         }
-        String soundex1 = Soundex.soundex(value1);
-        return soundex1 != null && soundex1.equals(Soundex.soundex(value2));
+        String soundex1 = CoreComponentsBuilder.get().getMVELExecutor().soundex(value1);
+        return soundex1 != null && soundex1.equals(CoreComponentsBuilder.get().getMVELExecutor().soundex(value2));
     }
 
     public static boolean contains(Object list, Object item) {
@@ -92,6 +92,8 @@ public class EvaluatorHelper {
             return ((Collection)list).contains(item);
         } else if (list instanceof Object[]) {
             return arrayContains( ( Object[] ) list, item );
+        } else if (item == null) {
+            return false;
         } else if (list instanceof int[]) {
             return contains((int[]) list, ((Integer)item).intValue());
         } else if (list instanceof long[]) {
@@ -245,5 +247,39 @@ public class EvaluatorHelper {
             if (i == primitiveItem) return true;
         }
         return false;
+    }
+
+    public static boolean coercingComparison(Object obj1, Object obj2, String op) {
+        try {
+            double d1 = toDouble( obj1 );
+            double d2 = toDouble( obj2 );
+
+            if (Double.isNaN( d1 ) || Double.isNaN( d2 )) {
+                return false;
+            }
+
+            switch (op) {
+                case "<": return d1 < d2;
+                case "<=": return d1 <= d2;
+                case ">": return d1 > d2;
+                case ">=": return d1 >= d2;
+            }
+
+        } catch (NumberFormatException nfe) { }
+
+        String s1 = obj1.toString();
+        String s2 = obj2.toString();
+        switch (op) {
+            case "<": return s1.compareTo( s2 ) < 0;
+            case "<=": return s1.compareTo( s2 ) <= 0;
+            case ">": return s1.compareTo( s2 ) > 0;
+            case ">=": return s1.compareTo( s2 ) >= 0;
+        }
+
+        throw new UnsupportedOperationException("Unable to compare " + obj1 + " and " + obj2);
+    }
+
+    private static double toDouble(Object obj) {
+        return obj instanceof Number ? ((Number)obj).doubleValue() : Double.parseDouble( obj.toString() );
     }
 }

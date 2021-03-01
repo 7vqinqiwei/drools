@@ -16,8 +16,15 @@
 
 package org.drools.core.reteoo;
 
+import java.util.function.Consumer;
+import java.util.function.Predicate;
+
+import org.drools.core.WorkingMemoryEntryPoint;
+import org.drools.core.common.EqualityKey;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemory;
+import org.drools.core.factmodel.traits.TraitTypeEnum;
+import org.drools.core.rule.EntryPointId;
 import org.drools.core.spi.PropagationContext;
 import org.drools.core.spi.Tuple;
 import org.drools.core.util.index.TupleList;
@@ -31,9 +38,11 @@ public class RightTupleImpl extends BaseTuple implements RightTuple {
 
     private LeftTuple            blocked;
 
-    private RightTuple            tempNextRightTuple;
-    private TupleMemory           tempRightTupleMemory;
-    private LeftTuple             tempBlocked;
+    private RightTuple           tempNextRightTuple;
+    private TupleMemory          tempRightTupleMemory;
+    private LeftTuple            tempBlocked;
+
+    private boolean              retracted;
 
     public RightTupleImpl() { }
     
@@ -267,7 +276,20 @@ public class RightTupleImpl extends BaseTuple implements RightTuple {
 
     @Override
     public void retractTuple( PropagationContext context, InternalWorkingMemory workingMemory ) {
-        getTupleSink().retractRightTuple( this, context, workingMemory );
+        if (!retracted) {
+            getTupleSink().retractRightTuple( this, context, workingMemory );
+            retracted = true;
+        }
+    }
+
+    @Override
+    public void setExpired( InternalWorkingMemory workingMemory, PropagationContext pctx ) {
+        super.setExpired();
+        // events expired at firing time should have a chance to produce a join (DROOLS-1329)
+        // but shouldn't participate to an accumulate (DROOLS-4393)
+        if (getTupleSink().getType() == NodeTypeEnums.AccumulateNode) {
+            retractTuple( pctx, workingMemory );
+        }
     }
 
     public InternalFactHandle getFactHandleForEvaluation() {

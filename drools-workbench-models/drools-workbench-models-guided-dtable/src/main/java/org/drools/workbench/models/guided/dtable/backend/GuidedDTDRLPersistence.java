@@ -1,12 +1,12 @@
 /*
  * Copyright 2010 Red Hat, Inc. and/or its affiliates.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
  * the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
  * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
@@ -22,9 +22,10 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.StringTokenizer;
 
+import org.drools.workbench.models.datamodel.rule.ActionCallMethod;
 import org.drools.workbench.models.datamodel.rule.ActionExecuteWorkItem;
 import org.drools.workbench.models.datamodel.rule.ActionFieldList;
 import org.drools.workbench.models.datamodel.rule.ActionFieldValue;
@@ -82,6 +83,11 @@ import org.kie.soup.project.datamodel.commons.packages.PackageNameWriter;
 import org.kie.soup.project.datamodel.oracle.DataType;
 import org.kie.soup.project.datamodel.oracle.OperatorsOracle;
 
+import static org.drools.workbench.models.datamodel.rule.Attribute.NEGATE_RULE;
+import static org.drools.workbench.models.guided.dtable.shared.model.GuidedDecisionTable52.RULE_DESCRIPTION_INDEX;
+import static org.drools.workbench.models.guided.dtable.shared.model.GuidedDecisionTable52.RULE_NAME_COLUMN_INDEX;
+import static org.drools.workbench.models.guided.dtable.shared.model.GuidedDecisionTable52.RULE_NUMBER_INDEX;
+
 /**
  * This takes care of converting GuidedDT object to DRL (via the RuleModel).
  */
@@ -115,11 +121,13 @@ public class GuidedDTDRLPersistence {
             TemplateDataProvider rowDataProvider = new GuidedDTTemplateDataProvider(allColumns,
                                                                                     row);
 
-            Integer num = (Integer) row.get(0).getNumericValue();
-            String desc = row.get(1).getStringValue();
+            Integer num = (Integer) row.get(RULE_NUMBER_INDEX).getNumericValue();
+            String desc = row.get(RULE_DESCRIPTION_INDEX).getStringValue();
 
             BRLRuleModel rm = new BRLRuleModel(dt);
-            rm.name = getName(dt.getTableName(),
+
+            rm.name = getName(dt,
+                              row,
                               num);
 
             doMetadata(allColumns,
@@ -146,9 +154,9 @@ public class GuidedDTDRLPersistence {
                 rm.parentName = dt.getParentName();
             }
 
-            sb.append("//from row number: " + (i + 1) + "\n");
+            sb.append(String.format("//from row number: %d\n", i + 1));
             if (desc != null && desc.length() > 0) {
-                sb.append("//" + desc + "\n");
+                sb.append(String.format("//%s\n", desc));
             }
 
             GuidedDTBRDRLPersistence drlMarshaller = new GuidedDTBRDRLPersistence(rowDataProvider);
@@ -323,12 +331,35 @@ public class GuidedDTDRLPersistence {
     private void addAction(IAction action,
                            List<LabelledAction> actions) {
         String binding = null;
+        boolean isUpdate = false;
         if (action instanceof ActionInsertFact) {
-            final ActionInsertFact af = (ActionInsertFact) action;
-            binding = af.getBoundName();
+            final ActionInsertFact original = (ActionInsertFact) action;
+
+            final ActionInsertFact af = new ActionInsertFact(original.getFactType());
+            af.setBoundName(original.getBoundName());
+            af.setFieldValues(original.getFieldValues());
+
+            action = af;
+            binding = original.getBoundName();
         } else if (action instanceof ActionSetField) {
-            final ActionSetField af = (ActionSetField) action;
-            binding = af.getVariable();
+            final ActionSetField original = (ActionSetField) action;
+
+            ActionSetField asf = null;
+            if (original instanceof ActionCallMethod) {
+                final ActionCallMethod originalACM = (ActionCallMethod) action;
+                asf = new ActionCallMethod(originalACM.getVariable());
+                ((ActionCallMethod) asf).setMethodName(originalACM.getMethodName());
+                ((ActionCallMethod) asf).setState(originalACM.getState());
+            } else if (original instanceof ActionUpdateField) {
+                asf = new ActionUpdateField(original.getVariable());
+                isUpdate = true;
+            } else {
+                asf = new ActionSetField(original.getVariable());
+            }
+            asf.setFieldValues(original.getFieldValues());
+
+            action = asf;
+            binding = original.getVariable();
         }
 
         //Binding is used to group related field setters together. It is essential for
@@ -343,6 +374,7 @@ public class GuidedDTDRLPersistence {
         final LabelledAction a = new LabelledAction();
         a.boundName = binding;
         a.action = action;
+        a.isUpdate = isUpdate;
         actions.add(a);
     }
 
@@ -457,6 +489,7 @@ public class GuidedDTDRLPersistence {
             update.setFieldValues(old.getFieldValues());
             a.action = update;
         }
+
         ActionSetField asf = (ActionSetField) a.action;
         ActionFieldValue val = new ActionFieldValue(sf.getFactField(),
                                                     cell,
@@ -502,7 +535,9 @@ public class GuidedDTDRLPersistence {
         for (LabelledAction labelledAction : actions) {
             IAction action = labelledAction.action;
             if (action instanceof ActionFieldList) {
-                if (labelledAction.boundName.equals(boundName) && labelledAction.isUpdate == isUpdate) {
+                if (labelledAction.boundName.equals(boundName)
+                        && labelledAction.isUpdate == isUpdate
+                        && !(labelledAction.action instanceof ActionCallMethod)) {
                     return labelledAction;
                 }
             }
@@ -860,7 +895,7 @@ public class GuidedDTDRLPersistence {
             if (validateAttributeCell(cell)) {
 
                 //If instance of "otherwise" column then flag RuleModel as being negated
-                if (at.getAttribute().equals(GuidedDecisionTable52.NEGATE_RULE_ATTR)) {
+                if (Objects.equals(at.getAttribute(), NEGATE_RULE.getAttributeName())) {
                     rm.setNegated(Boolean.valueOf(cell));
                 } else {
                     attribs.add(new RuleAttribute(at.getAttribute(),
@@ -897,9 +932,19 @@ public class GuidedDTDRLPersistence {
         }
     }
 
-    String getName(String tableName,
+    String getName(GuidedDecisionTable52 dt,
+                   List<DTCellValue52> row,
                    Number num) {
-        return "Row " + num.longValue() + " " + tableName;
+        final DTCellValue52 ruleNameValue = row.get(RULE_NAME_COLUMN_INDEX);
+        if (hasStringValue(ruleNameValue)) {
+            return ruleNameValue.getStringValue();
+        } else {
+            return String.format("Row %d %s", num.longValue(), dt.getTableName());
+        }
+    }
+
+    private boolean hasStringValue(final DTCellValue52 dtCellValue52) {
+        return dtCellValue52 != null && dtCellValue52.getStringValue() != null && !dtCellValue52.getStringValue().trim().isEmpty();
     }
 
     boolean validCell(String c,
@@ -937,17 +982,24 @@ public class GuidedDTDRLPersistence {
         //expansion and contraction of decision table columns.... this might have to go.
         if (no(c.getOperator())) {
 
-            String[] a = cell.split("\\s");
-            if (a.length > 1) {
-                //Operator might be 1 part (e.g. "==") or two parts (e.g. "not in")
-                StringBuilder operator = new StringBuilder(a[0]);
-                for (int i = 1; i < a.length - 1; i++) {
-                    operator.append(a[i]);
-                }
-                sfc.setOperator(operator.toString());
-                sfc.setValue(a[a.length - 1]);
+            int quotesIndex = cell.indexOf('"');
+            if (quotesIndex > 0) {
+                // DROOLS-5883
+                sfc.setOperator(cell.substring(0, quotesIndex).trim());
+                sfc.setValue(cell.substring(quotesIndex));
             } else {
-                sfc.setValue(cell);
+                String[] a = cell.split("\\s");
+                if (a.length > 1) {
+                    //Operator might be 1 part (e.g. "==") or two parts (e.g. "not in")
+                    StringBuilder operator = new StringBuilder(a[0]);
+                    for (int i = 1; i < a.length - 1; i++) {
+                        operator.append(a[i]);
+                    }
+                    sfc.setOperator(operator.toString());
+                    sfc.setValue(a[a.length - 1]);
+                } else {
+                    sfc.setValue(cell);
+                }
             }
         } else {
 

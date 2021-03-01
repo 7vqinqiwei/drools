@@ -16,10 +16,7 @@
 
 package org.drools.modelcompiler.builder.generator;
 
-import java.lang.reflect.Method;
-import java.lang.reflect.ParameterizedType;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -29,6 +26,20 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.github.javaparser.ast.Modifier;
+import com.github.javaparser.ast.NodeList;
+import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.expr.ClassExpr;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NullLiteralExpr;
+import com.github.javaparser.ast.expr.StringLiteralExpr;
+import com.github.javaparser.ast.expr.VariableDeclarationExpr;
+import com.github.javaparser.ast.stmt.BlockStmt;
+import com.github.javaparser.ast.stmt.ReturnStmt;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
+import com.github.javaparser.ast.type.Type;
 import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
 import org.drools.compiler.lang.descr.AndDescr;
 import org.drools.compiler.lang.descr.AnnotationDescr;
@@ -37,26 +48,13 @@ import org.drools.compiler.lang.descr.BehaviorDescr;
 import org.drools.compiler.lang.descr.PackageDescr;
 import org.drools.compiler.lang.descr.QueryDescr;
 import org.drools.compiler.lang.descr.RuleDescr;
+import org.drools.core.addon.TypeResolver;
+import org.drools.core.base.CoreComponentsBuilder;
 import org.drools.core.definitions.InternalKnowledgePackage;
+import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.factmodel.AnnotationDefinition;
 import org.drools.core.rule.Behavior;
-import org.drools.core.ruleunit.RuleUnitDescription;
 import org.drools.core.time.TimeUtils;
-import org.drools.core.util.MVELSafeHelper;
-import org.drools.javaparser.ast.Modifier;
-import org.drools.javaparser.ast.NodeList;
-import org.drools.javaparser.ast.body.MethodDeclaration;
-import org.drools.javaparser.ast.expr.AssignExpr;
-import org.drools.javaparser.ast.expr.ClassExpr;
-import org.drools.javaparser.ast.expr.Expression;
-import org.drools.javaparser.ast.expr.MethodCallExpr;
-import org.drools.javaparser.ast.expr.NullLiteralExpr;
-import org.drools.javaparser.ast.expr.StringLiteralExpr;
-import org.drools.javaparser.ast.expr.VariableDeclarationExpr;
-import org.drools.javaparser.ast.stmt.BlockStmt;
-import org.drools.javaparser.ast.stmt.ReturnStmt;
-import org.drools.javaparser.ast.type.ClassOrInterfaceType;
-import org.drools.javaparser.ast.type.Type;
 import org.drools.model.Rule;
 import org.drools.model.UnitData;
 import org.drools.model.Variable;
@@ -66,11 +64,17 @@ import org.drools.modelcompiler.builder.errors.UnknownDeclarationError;
 import org.drools.modelcompiler.builder.generator.expressiontyper.ExpressionTyper;
 import org.drools.modelcompiler.builder.generator.expressiontyper.ExpressionTyperContext;
 import org.drools.modelcompiler.builder.generator.visitor.ModelGeneratorVisitor;
-import org.kie.soup.project.datamodel.commons.types.TypeResolver;
+import org.kie.internal.ruleunit.RuleUnitDescription;
+import org.kie.internal.ruleunit.RuleUnitVariable;
 
 import static java.util.stream.Collectors.toList;
-import static org.drools.javaparser.JavaParser.parseExpression;
+
+import static com.github.javaparser.StaticJavaParser.parseExpression;
+import static org.drools.core.impl.StatefulKnowledgeSessionImpl.DEFAULT_RULE_UNIT;
 import static org.drools.modelcompiler.builder.PackageModel.DATE_TIME_FORMATTER_FIELD;
+import static org.drools.modelcompiler.builder.PackageModel.DOMAIN_CLASSESS_METADATA_FILE_NAME;
+import static org.drools.modelcompiler.builder.PackageModel.DOMAIN_CLASS_METADATA_INSTANCE;
+import static org.drools.modelcompiler.builder.generator.DrlxParseUtil.classNameToReferenceType;
 import static org.drools.modelcompiler.builder.generator.DrlxParseUtil.classToReferenceType;
 import static org.drools.modelcompiler.builder.generator.DrlxParseUtil.generateLambdaWithoutParameters;
 import static org.drools.modelcompiler.builder.generator.DrlxParseUtil.toClassOrInterfaceType;
@@ -84,8 +88,9 @@ import static org.drools.modelcompiler.builder.generator.DslMethodNames.SUPPLY_C
 import static org.drools.modelcompiler.builder.generator.DslMethodNames.UNIT_CALL;
 import static org.drools.modelcompiler.builder.generator.DslMethodNames.UNIT_DATA_CALL;
 import static org.drools.modelcompiler.builder.generator.DslMethodNames.WINDOW_CALL;
-import static org.drools.modelcompiler.util.ClassUtil.toRawClass;
+import static org.drools.modelcompiler.util.ClassUtil.asJavaSourceName;
 import static org.drools.modelcompiler.util.StringUtil.toId;
+import static org.kie.internal.ruleunit.RuleUnitUtil.isLegacyRuleUnit;
 
 public class ModelGenerator {
 
@@ -94,19 +99,19 @@ public class ModelGenerator {
     public static final Set<String> temporalOperators = new HashSet<>();
 
     static {
-        attributesMap.put("no-loop", "Rule.Attribute.NO_LOOP");
-        attributesMap.put("salience", "Rule.Attribute.SALIENCE");
-        attributesMap.put("enabled", "Rule.Attribute.ENABLED");
-        attributesMap.put("auto-focus", "Rule.Attribute.AUTO_FOCUS");
-        attributesMap.put("lock-on-active", "Rule.Attribute.LOCK_ON_ACTIVE");
-        attributesMap.put("agenda-group", "Rule.Attribute.AGENDA_GROUP");
-        attributesMap.put("activation-group", "Rule.Attribute.ACTIVATION_GROUP");
-        attributesMap.put("ruleflow-group", "Rule.Attribute.RULEFLOW_GROUP");
-        attributesMap.put("duration", "Rule.Attribute.DURATION");
-        attributesMap.put("timer", "Rule.Attribute.TIMER");
-        attributesMap.put("calendars", "Rule.Attribute.CALENDARS");
-        attributesMap.put("date-effective", "Rule.Attribute.DATE_EFFECTIVE");
-        attributesMap.put("date-expires", "Rule.Attribute.DATE_EXPIRES");
+        attributesMap.put("no-loop",  "org.drools.model.Rule.Attribute.NO_LOOP");
+        attributesMap.put("salience", "org.drools.model.Rule.Attribute.SALIENCE");
+        attributesMap.put("enabled", "org.drools.model.Rule.Attribute.ENABLED");
+        attributesMap.put("auto-focus", "org.drools.model.Rule.Attribute.AUTO_FOCUS");
+        attributesMap.put("lock-on-active", "org.drools.model.Rule.Attribute.LOCK_ON_ACTIVE");
+        attributesMap.put("agenda-group", "org.drools.model.Rule.Attribute.AGENDA_GROUP");
+        attributesMap.put("activation-group", "org.drools.model.Rule.Attribute.ACTIVATION_GROUP");
+        attributesMap.put("ruleflow-group", "org.drools.model.Rule.Attribute.RULEFLOW_GROUP");
+        attributesMap.put("duration", "org.drools.model.Rule.Attribute.DURATION");
+        attributesMap.put("timer", "org.drools.model.Rule.Attribute.TIMER");
+        attributesMap.put("calendars", "org.drools.model.Rule.Attribute.CALENDARS");
+        attributesMap.put("date-effective", "org.drools.model.Rule.Attribute.DATE_EFFECTIVE");
+        attributesMap.put("date-expires", "org.drools.model.Rule.Attribute.DATE_EXPIRES");
 
         temporalOperators.add("before");
         temporalOperators.add("after");
@@ -127,15 +132,7 @@ public class ModelGenerator {
 
     public static void generateModel(KnowledgeBuilderImpl kbuilder, InternalKnowledgePackage pkg, PackageDescr packageDescr, PackageModel packageModel, boolean isPattern) {
         TypeResolver typeResolver = pkg.getTypeResolver();
-        packageModel.addImports(pkg.getImports().keySet());
-        packageModel.addStaticImports(pkg.getStaticImports());
-        packageModel.addEntryPoints(packageDescr.getEntryPointDeclarations());
-        packageModel.addGlobals(pkg);
-        packageModel.addAccumulateFunctions(pkg.getAccumulateFunctions());
-        packageModel.setInternalKnowledgePackage(pkg);
-        new WindowReferenceGenerator(packageModel, typeResolver).addWindowReferences(kbuilder, packageDescr.getWindowDeclarations());
-        packageModel.addAllFunctions(packageDescr.getFunctions().stream().map(FunctionGenerator::toFunction).collect(toList()));
-
+        initPackageModel( kbuilder, pkg, typeResolver, packageDescr, packageModel );
 
         for(RuleDescr descr : packageDescr.getRules()) {
             RuleContext context = new RuleContext(kbuilder, packageModel, typeResolver, isPattern);
@@ -145,6 +142,8 @@ public class ModelGenerator {
             }
         }
 
+        HashSet<RuleUnitDescription> ruleUnitDescriptions = new HashSet<>();
+
         for (RuleDescr descr : packageDescr.getRules()) {
             RuleContext context = new RuleContext(kbuilder, packageModel, typeResolver, isPattern);
             context.setDialectFromAttributes(packageDescr.getAttributes());
@@ -152,28 +151,46 @@ public class ModelGenerator {
                 QueryGenerator.processQuery(kbuilder, packageModel, (QueryDescr) descr);
             } else {
                 processRule(kbuilder, packageModel, packageDescr, descr, context);
+                RuleUnitDescription ruleUnitDescr = context.getRuleUnitDescr();
+                if (ruleUnitDescr != null) ruleUnitDescriptions.add(ruleUnitDescr);
             }
+        }
+
+        for (RuleUnitDescription rud : ruleUnitDescriptions) {
+            packageModel.addRuleUnit(rud);
         }
     }
 
+    public static void initPackageModel( KnowledgeBuilderImpl kbuilder, InternalKnowledgePackage pkg, TypeResolver typeResolver, PackageDescr packageDescr, PackageModel packageModel ) {
+        packageModel.addImports( pkg.getImports().keySet());
+        packageModel.addStaticImports( pkg.getStaticImports());
+        packageModel.addEntryPoints( packageDescr.getEntryPointDeclarations());
+        packageModel.addGlobals( pkg );
+        packageModel.addAccumulateFunctions( pkg.getAccumulateFunctions());
+        packageModel.setInternalKnowledgePackage( pkg );
+        new WindowReferenceGenerator( packageModel, typeResolver ).addWindowReferences( kbuilder, packageDescr.getWindowDeclarations());
+        packageModel.addAllFunctions( packageDescr.getFunctions().stream().map(FunctionGenerator::toFunction).collect(toList()));
+    }
 
     private static void processRule(KnowledgeBuilderImpl kbuilder, PackageModel packageModel, PackageDescr packageDescr, RuleDescr ruleDescr, RuleContext context) {
         context.setDescr(ruleDescr);
         context.addGlobalDeclarations(packageModel.getGlobals());
+        context.setDialectFromAttributes(ruleDescr.getAttributes().values());
 
         for(Entry<String, Object> kv : ruleDescr.getNamedConsequences().entrySet()) {
             context.addNamedConsequence(kv.getKey(), kv.getValue().toString());
         }
 
-        context.setDialectFromAttributes(ruleDescr.getAttributes().values());
-
         RuleUnitDescription ruleUnitDescr = context.getRuleUnitDescr();
         BlockStmt ruleVariablesBlock = new BlockStmt();
-        createUnitData(context, ruleUnitDescr, ruleVariablesBlock );
+
+        if (isLegacyRuleUnit()) {
+            createUnitData( context, ruleUnitDescr, ruleVariablesBlock );
+        }
 
         new ModelGeneratorVisitor(context, packageModel).visit(getExtendedLhs(packageDescr, ruleDescr));
         final String ruleMethodName = "rule_" + toId(ruleDescr.getName());
-        MethodDeclaration ruleMethod = new MethodDeclaration(EnumSet.of(Modifier.PUBLIC, Modifier.STATIC), toClassOrInterfaceType( Rule.class ), ruleMethodName);
+        MethodDeclaration ruleMethod = new MethodDeclaration(NodeList.nodeList(Modifier.publicModifier(), Modifier.staticModifier()), toClassOrInterfaceType( Rule.class ), ruleMethodName);
 
         ruleMethod.setJavadocComment(" Rule name: " + ruleDescr.getName() + " ");
 
@@ -186,7 +203,7 @@ public class ModelGenerator {
         ruleCall.addArgument( new StringLiteralExpr( ruleDescr.getName() ) );
 
         MethodCallExpr buildCallScope = ruleUnitDescr != null ?
-                new MethodCallExpr(ruleCall, UNIT_CALL).addArgument( new ClassExpr( classToReferenceType(ruleUnitDescr.getRuleUnitClass()) ) ) :
+                new MethodCallExpr(ruleCall, UNIT_CALL).addArgument( new ClassExpr( classNameToReferenceType(ruleUnitDescr.getCanonicalName()) ) ) :
                 ruleCall;
 
         for (MethodCallExpr attributeExpr : ruleAttributes(context, ruleDescr)) {
@@ -210,7 +227,7 @@ public class ModelGenerator {
         ruleVariablesBlock.addStatement(new AssignExpr(ruleVar, buildCall, AssignExpr.Operator.ASSIGN));
 
         ruleVariablesBlock.addStatement( new ReturnStmt("rule") );
-        packageModel.putRuleMethod(ruleMethodName, ruleMethod);
+        packageModel.putRuleMethod(ruleUnitDescr != null ? ruleUnitDescr.getSimpleName() : DEFAULT_RULE_UNIT, ruleMethod);
     }
 
     private static AndDescr getExtendedLhs(PackageDescr packageDescr, RuleDescr ruleDescr) {
@@ -278,7 +295,7 @@ public class ModelGenerator {
                     break;
                 case "date-effective":
                 case "date-expires":
-                    attributeCall.addArgument( parseExpression(String.format("GregorianCalendar.from(LocalDate.parse(\"%s\", " + DATE_TIME_FORMATTER_FIELD + ").atStartOfDay(ZoneId.systemDefault()))", as.getValue().getValue())));
+                    attributeCall.addArgument( parseExpression(String.format("java.util.GregorianCalendar.from(java.time.LocalDate.parse(\"%s\", " + DATE_TIME_FORMATTER_FIELD + ").atStartOfDay(java.time.ZoneId.systemDefault()))", as.getValue().getValue())));
                     break;
                 default:
                     throw new UnsupportedOperationException("Unhandled case for rule attribute: " + as.getKey());
@@ -294,7 +311,7 @@ public class ModelGenerator {
         Expression salienceExpr = parseExpression( value );
         Optional<TypedExpression> typedExpression = expressionTyper.toTypedExpression(salienceExpr).getTypedExpression();
         if (typedExpression.isPresent()) {
-            Expression lambda = generateLambdaWithoutParameters(expressionTyperContext.getUsedDeclarations(), typedExpression.get().getExpression(), true);
+            Expression lambda = generateLambdaWithoutParameters(expressionTyperContext.getUsedDeclarations(), typedExpression.get().getExpression(), true, Optional.empty());
             MethodCallExpr supplyCall = new MethodCallExpr(null, SUPPLY_CALL);
             expressionTyperContext.getUsedDeclarations().stream()
                     .map(context::getVarExpr)
@@ -308,7 +325,9 @@ public class ModelGenerator {
 
     /**
      * Build a list of method calls, representing each needed {@link org.drools.model.impl.RuleBuilder#metadata(String, Object)}
-     * starting from a drools-compiler {@link RuleDescr}.
+     * starting from a drools-compiler {@link RuleDescr}.<br/>
+     * Based on {@link org.drools.modelcompiler.KiePackagesBuilder#setRuleMetaAttributes(Rule, RuleImpl)} the reserved annotation keywords are:
+     * Propagation, All, Direct.
      */
     private static List<MethodCallExpr> ruleMetaAttributes(RuleContext context, RuleDescr ruleDescr) {
         List<MethodCallExpr> ruleMetaAttributes = new ArrayList<>();
@@ -317,7 +336,9 @@ public class ModelGenerator {
             metaAttributeCall.addArgument(new StringLiteralExpr(metaAttr));
             AnnotationDescr ad = ruleDescr.getAnnotation( metaAttr );
             String adFqn = ad.getFullyQualifiedName();
-            if (adFqn != null) {
+            if ("Propagation".equals(metaAttr)) { // legacy case, as explained in the javadoc annotation above, ref. DROOLS-5685
+                metaAttributeCall.addArgument(parseExpression(org.kie.api.definition.rule.Propagation.Type.class.getCanonicalName() + "." + ad.getSingleValueAsString()));
+            } else if (adFqn != null) {
                 AnnotationDefinition annotationDefinition;
                 try {
                     annotationDefinition = AnnotationDefinition.build(context.getTypeResolver().resolveType(adFqn),
@@ -339,7 +360,7 @@ public class ModelGenerator {
             } else {
                 if ( ad.hasValue() ) {
                     if ( ad.getValues().size() == 1 ) {
-                        metaAttributeCall.addArgument(objectAsJPExpression(resolveValue(ad.getSingleValueAsString())));
+                        metaAttributeCall.addArgument(annotationSingleValueExpression(ad));
                     } else {
                         metaAttributeCall.addArgument(objectAsJPExpression(ad.getValueMap()));
                     }
@@ -366,64 +387,61 @@ public class ModelGenerator {
         }
     }
 
-    private static Object resolveValue(String value) {
+    private static Expression annotationSingleValueExpression(AnnotationDescr ad) {
         // for backward compatibility, if something is not an expression, we return an string as is
-        Object result = value;
+        if (resolveValueWithMVEL(ad.getSingleValueAsString()).isPresent()) {
+            return parseExpression(ad.getSingleValueAsString()); // then in the produced exec model we leave the original expression statement, not the pre-computed MVEL result.
+        } else {
+            return objectAsJPExpression(ad.getSingleValueAsString()); // backward compatibility case: @ann(Hello World!) or @ann( john_doe ) would result in a String literal for "Hello World!" or "john_doe"
+        }
+    }
+
+    private static Optional<Object> resolveValueWithMVEL(String value) {
         // try to resolve as an expression:
         try {
-            result = MVELSafeHelper.getEvaluator().eval(value);
+            Object result = CoreComponentsBuilder.get().getMVELExecutor().eval(value);
+            return Optional.of(result);
         } catch (Exception e) {
-            // do nothing
+            return Optional.empty();
         }
-        return result;
     }
 
     private static void createUnitData(RuleContext context, RuleUnitDescription ruleUnitDescr, BlockStmt ruleVariablesBlock ) {
         if (ruleUnitDescr != null) {
-            for (Map.Entry<String, Method> unitVar : ruleUnitDescr.getUnitVarAccessors().entrySet()) {
-                addUnitData(context, unitVar.getKey(), unitVar.getValue().getGenericReturnType(), ruleVariablesBlock);
+            for (RuleUnitVariable unitVar : ruleUnitDescr.getUnitVarDeclarations()) {
+                addUnitData(context, unitVar, ruleVariablesBlock);
             }
         }
     }
 
-    private static void addUnitData(RuleContext context, String unitVar, java.lang.reflect.Type type, BlockStmt ruleBlock) {
-        Class<?> rawClass = toRawClass(type);
-        Type declType = classToReferenceType( toRawClass(type) );
-
-        context.addRuleUnitVar( unitVar, getClassForUnitData( type, rawClass ) );
+  private static void addUnitData(RuleContext context, RuleUnitVariable unitVar, BlockStmt ruleBlock) {
+        Type declType = classToReferenceType(unitVar.getBoxedVarType());
+        context.addRuleUnitVar( unitVar.getName(), unitVar.getDataSourceParameterType() );
+        context.addRuleUnitVarOriginalType( unitVar.getName(), unitVar.getType() );
 
         ClassOrInterfaceType varType = toClassOrInterfaceType(UnitData.class);
         varType.setTypeArguments(declType);
-        VariableDeclarationExpr var_ = new VariableDeclarationExpr(varType, context.getVar(unitVar), Modifier.FINAL);
+        VariableDeclarationExpr var_ = new VariableDeclarationExpr(varType, context.getVar(unitVar.getName()), Modifier.finalModifier());
 
         MethodCallExpr unitDataCall = new MethodCallExpr(null, UNIT_DATA_CALL);
 
         unitDataCall.addArgument(new ClassExpr( declType ));
-        unitDataCall.addArgument(new StringLiteralExpr(unitVar));
+        unitDataCall.addArgument(new StringLiteralExpr(unitVar.getName()));
 
         AssignExpr var_assign = new AssignExpr(var_, unitDataCall, AssignExpr.Operator.ASSIGN);
         ruleBlock.addStatement(var_assign);
     }
 
-    private static Class<?> getClassForUnitData( java.lang.reflect.Type type, Class<?> rawClass ) {
-        if (Iterable.class.isAssignableFrom( rawClass ) && type instanceof ParameterizedType) {
-            return toRawClass( (( ParameterizedType ) type).getActualTypeArguments()[0] );
-        }
-        if (rawClass.isArray()) {
-            return rawClass.getComponentType();
-        }
-        return rawClass;
-    }
-
     public static void createVariables(KnowledgeBuilderImpl kbuilder, BlockStmt block, PackageModel packageModel, RuleContext context) {
         for (DeclarationSpec decl : context.getAllDeclarations()) {
+            boolean domainClass = packageModel.registerDomainClass( decl.getDeclarationClass() );
             if (!packageModel.getGlobals().containsKey(decl.getBindingId()) && !context.queryParameterWithName(p -> p.name.equals(decl.getBindingId())).isPresent()) {
-                addVariable(kbuilder, block, decl, context);
+                addVariable(kbuilder, block, decl, context, domainClass);
             }
         }
     }
 
-    private static void addVariable(KnowledgeBuilderImpl kbuilder, BlockStmt ruleBlock, DeclarationSpec decl, RuleContext context) {
+    private static void addVariable(KnowledgeBuilderImpl kbuilder, BlockStmt ruleBlock, DeclarationSpec decl, RuleContext context, boolean domainClass) {
         if (decl.getDeclarationClass() == null) {
             kbuilder.addBuilderResult( new UnknownDeclarationError( decl.getBindingId() ) );
             return;
@@ -432,11 +450,17 @@ public class ModelGenerator {
 
         ClassOrInterfaceType varType = toClassOrInterfaceType(Variable.class);
         varType.setTypeArguments(declType);
-        VariableDeclarationExpr var_ = new VariableDeclarationExpr(varType, context.getVar(decl.getBindingId()), Modifier.FINAL);
+        VariableDeclarationExpr var_ = new VariableDeclarationExpr(varType, context.getVar(decl.getBindingId()), Modifier.finalModifier());
 
         MethodCallExpr declarationOfCall = new MethodCallExpr(null, DECLARATION_OF_CALL);
 
-        declarationOfCall.addArgument(new ClassExpr(decl.getType() ));
+        declarationOfCall.addArgument(new ClassExpr( decl.getBoxedType() ));
+
+        if (domainClass) {
+            String domainClassSourceName = asJavaSourceName( decl.getDeclarationClass() );
+            declarationOfCall.addArgument( DOMAIN_CLASSESS_METADATA_FILE_NAME + context.getPackageModel().getPackageUUID() + "." + domainClassSourceName + DOMAIN_CLASS_METADATA_INSTANCE );
+        }
+
         declarationOfCall.addArgument(new StringLiteralExpr(decl.getVariableName().orElse(decl.getBindingId())));
 
         decl.getDeclarationSource().ifPresent(declarationOfCall::addArgument);
@@ -449,11 +473,11 @@ public class ModelGenerator {
         for ( BehaviorDescr behaviorDescr : decl.getBehaviors() ) {
             MethodCallExpr windowCall = new MethodCallExpr(null, WINDOW_CALL);
             if ( Behavior.BehaviorType.TIME_WINDOW.matches(behaviorDescr.getSubType() ) ) {
-                windowCall.addArgument( "Window.Type.TIME" );
+                windowCall.addArgument( "org.drools.model.Window.Type.TIME" );
                 windowCall.addArgument( "" + TimeUtils.parseTimeString(behaviorDescr.getParameters().get(0 ) ) );
             }
             if ( Behavior.BehaviorType.LENGTH_WINDOW.matches( behaviorDescr.getSubType() ) ) {
-                windowCall.addArgument( "Window.Type.LENGTH" );
+                windowCall.addArgument( "org.drools.model.Window.Type.LENGTH" );
                 windowCall.addArgument( "" + Integer.valueOf( behaviorDescr.getParameters().get( 0 ) ) );
             }
             declarationOfCall.addArgument( windowCall );

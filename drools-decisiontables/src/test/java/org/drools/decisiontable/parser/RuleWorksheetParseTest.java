@@ -53,7 +53,7 @@ public class RuleWorksheetParseTest {
 
         final CaseInsensitiveMap props = listener.getProperties();
         assertNotNull( props );
-        assertEquals( "myruleset", props.getSingleProperty( "RuleSet" ) );
+        assertEquals( "data", props.getSingleProperty( "RuleSet" ) );
         assertEquals( "someMisc",  props.getSingleProperty( "misc" ) );
         /*
          * System.out.println("Here are the global properties...");
@@ -69,7 +69,7 @@ public class RuleWorksheetParseTest {
         final CaseInsensitiveMap props = listener.getProperties();
         assertNotNull( props );
         final String ruleSetName = props.getSingleProperty( "RuleSet" );
-        assertEquals( "ruleSetName", ruleSetName );
+        assertEquals( "data", ruleSetName );
     }
 
     @Test
@@ -86,7 +86,7 @@ public class RuleWorksheetParseTest {
 
         // System.out.println(ruleset.toXML());
 
-        assertEquals( "myruleset", ruleset.getName() );
+        assertEquals( "data", ruleset.getName() );
         assertEquals( 3, ruleset.getImports().size() );
         assertEquals( 6, ruleset.getRules().size() );
 
@@ -217,27 +217,6 @@ public class RuleWorksheetParseTest {
             fail( "should have failed" );
         } catch( DecisionTableParseException e ) {
             String badCell = RuleSheetParserUtil.rc2name( 12, 1 );
-            System.err.println( e.getMessage() );
-            assertTrue( e.getMessage().contains( badCell ) );
-        }
-    }
-
-    /**
-     * Must have a code snippet in a condition.
-     */
-    @Test
-    public void testMissingCodeSnippetCondition() {
-        try {
-            makeRuleSet();
-            makeRuleTable();
-            makeRow( 11, "C",              "C",              "C",   "A",         "A" );
-            makeRow( 12, "Foo",            "Foo",            "Foo" );
-            makeRow( 13, "attr == $param", "attr == $param", "",    "action();", "action();" );
-            makeRow( 15, "1",              "2",              "3",   "",          "" );
-            listener.finishSheet();
-            fail( "should have failed" );
-        } catch( DecisionTableParseException e ) {
-            String badCell = RuleSheetParserUtil.rc2name( 13, 3 );
             System.err.println( e.getMessage() );
             assertTrue( e.getMessage().contains( badCell ) );
         }

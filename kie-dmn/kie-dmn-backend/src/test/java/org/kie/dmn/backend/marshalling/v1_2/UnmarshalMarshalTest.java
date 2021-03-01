@@ -32,6 +32,8 @@ import javax.xml.transform.stream.StreamSource;
 
 import org.junit.Test;
 import org.kie.dmn.api.marshalling.DMNMarshaller;
+import org.kie.dmn.backend.marshalling.v1_2.extensions.MyTestRegister;
+import org.kie.dmn.backend.marshalling.v1x.DMNMarshallerFactory;
 import org.kie.dmn.model.api.Definitions;
 import org.kie.dmn.model.api.dmndi.DMNShape;
 import org.kie.dmn.model.api.dmndi.DMNStyle;
@@ -54,13 +56,17 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-
 public class UnmarshalMarshalTest {
 
     private static final StreamSource DMN12_SCHEMA_SOURCE = new StreamSource(UnmarshalMarshalTest.class.getResource("/DMN12.xsd").getFile());
     private static final DMNMarshaller MARSHALLER = new org.kie.dmn.backend.marshalling.v1x.XStreamMarshaller();
-    protected static final Logger logger = LoggerFactory.getLogger(UnmarshalMarshalTest.class);
-    
+    protected static final Logger LOG = LoggerFactory.getLogger(UnmarshalMarshalTest.class);
+
+    @Test
+    public void testV12_simple() throws Exception {
+        testRoundTripV12("org/kie/dmn/backend/marshalling/v1_2/", "simple.dmn");
+    }
+
     @Test
     public void testV12_ch11example() throws Exception {
         testRoundTripV12("org/kie/dmn/backend/marshalling/v1_2/", "ch11example.dmn");
@@ -83,6 +89,17 @@ public class UnmarshalMarshalTest {
     }
 
     @Test
+    public void testV12_DMNDIDiagramElementExtension() throws Exception {
+        testRoundTripV12("org/kie/dmn/backend/marshalling/v1_2/", "DMNDIDiagramElementExtension.dmn");
+    }
+
+    @Test
+    public void testV12_DMNDIDiagramElementExtension_withContent() throws Exception {
+        DMNMarshaller marshaller = DMNMarshallerFactory.newMarshallerWithExtensions(Arrays.asList(new MyTestRegister()));
+        testRoundTrip("org/kie/dmn/backend/marshalling/v1_2/", "DMNDIDiagramElementExtension_withContent.dmn", marshaller, DMN12_SCHEMA_SOURCE);
+    }
+
+    @Test
     public void test_hardcoded_java_max_call() throws Exception {
         testRoundTripV12("org/kie/dmn/backend/marshalling/v1_2/", "hardcoded-java-max-call.dmn");
     }
@@ -97,69 +114,78 @@ public class UnmarshalMarshalTest {
         assertEquals(21d, shape0sharedStyle.getFontSize(), 0.0d);
     }
 
+    @Test
+    public void test_DMNLabel_Text() throws Exception {
+        testRoundTripV12("org/kie/dmn/backend/marshalling/v1_2/", "DMNLabel-Text.dmn");
+    }
+
+    @Test
+    public void testV12_decision_list() throws Exception {
+        testRoundTripV12("org/kie/dmn/backend/marshalling/v1_2/", "decision-list.dmn");
+    }
+
     public void testRoundTripV12(String subdir, String xmlfile) throws Exception {
         testRoundTrip(subdir, xmlfile, MARSHALLER, DMN12_SCHEMA_SOURCE);
     }
 
     public void testRoundTrip(String subdir, String xmlfile, DMNMarshaller marshaller, Source schemaSource) throws Exception {
-        
+
         File baseOutputDir = new File("target/test-xmlunit/");
         File testClassesBaseDir = new File("target/test-classes/");
-        
-    
+
         File inputXMLFile = new File(testClassesBaseDir, subdir + xmlfile);
-        
-        FileInputStream fis = new FileInputStream( inputXMLFile );
-                
-        Definitions unmarshal = marshaller.unmarshal( new InputStreamReader( fis ) );
-        
+
+        FileInputStream fis = new FileInputStream(inputXMLFile);
+
+        Definitions unmarshal = marshaller.unmarshal(new InputStreamReader(fis));
+
         Validator v = Validator.forLanguage(Languages.W3C_XML_SCHEMA_NS_URI);
         v.setSchemaSource(schemaSource);
-        ValidationResult validateInputResult = v.validateInstance(new StreamSource( inputXMLFile ));
+        ValidationResult validateInputResult = v.validateInstance(new StreamSource(inputXMLFile));
         if (!validateInputResult.isValid()) {
-            for ( ValidationProblem p : validateInputResult.getProblems()) {
-                System.err.println(p);
+            for (ValidationProblem p : validateInputResult.getProblems()) {
+                LOG.error("{}", p);
             }
         }
         assertTrue(validateInputResult.isValid());
 
         final File subdirFile = new File(baseOutputDir, subdir);
         if (!subdirFile.mkdirs()) {
-            logger.warn("mkdirs() failed for File: " + subdirFile.getAbsolutePath() + "!");
+            LOG.warn("mkdirs() failed for File: ", subdirFile.getAbsolutePath());
         }
-        FileOutputStream sourceFos = new FileOutputStream( new File(baseOutputDir, subdir + "a." + xmlfile) );
+        FileOutputStream sourceFos = new FileOutputStream(new File(baseOutputDir, subdir + "a." + xmlfile));
         Files.copy(
                 new File(testClassesBaseDir, subdir + xmlfile).toPath(),
                 sourceFos
-                );
+        );
         sourceFos.flush();
         sourceFos.close();
-                
-        System.out.println( marshaller.marshal(unmarshal) );
+
+        LOG.debug("{}", marshaller.marshal(unmarshal));
         File outputXMLFile = new File(baseOutputDir, subdir + "b." + xmlfile);
-        try (FileWriter targetFos = new FileWriter( outputXMLFile )) {
+        try (FileWriter targetFos = new FileWriter(outputXMLFile)) {
             marshaller.marshal(unmarshal, targetFos);
         }
-        
+
         // Should also validate output XML:
-        ValidationResult validateOutputResult = v.validateInstance(new StreamSource( outputXMLFile ));
+        ValidationResult validateOutputResult = v.validateInstance(new StreamSource(outputXMLFile));
         if (!validateOutputResult.isValid()) {
-            for ( ValidationProblem p : validateOutputResult.getProblems()) {
-                System.err.println(p);
+            for (ValidationProblem p : validateOutputResult.getProblems()) {
+                LOG.error("{}", p);
             }
         }
         assertTrue(validateOutputResult.isValid());
-        
-        System.out.println("\n---\nDefault XMLUnit comparison:");
-        Source control = Input.fromFile( inputXMLFile ).build();
-        Source test = Input.fromFile( outputXMLFile ).build();
-        Diff allDiffsSimilarAndDifferent = DiffBuilder
-                .compare( control )
-                .withTest( test )
-                .build();
-        allDiffsSimilarAndDifferent.getDifferences().forEach(System.out::println);
 
-        System.out.println("XMLUnit comparison with customized similarity for defaults:");
+        LOG.debug("\n---\nDefault XMLUnit comparison:");
+        Source control = Input.fromFile(inputXMLFile).build();
+        Source test = Input.fromFile(outputXMLFile).build();
+        Diff allDiffsSimilarAndDifferent = DiffBuilder
+                .compare(control)
+                .withTest(test)
+                .build();
+        allDiffsSimilarAndDifferent.getDifferences().forEach(m -> LOG.debug("{}", m));
+
+        LOG.info("XMLUnit comparison with customized similarity for defaults:");
         // in the following a manual DifferenceEvaluator is needed until XMLUnit is configured for properly parsing the XSD linked inside the XML,
         // in order to detect the optional+defaultvalue attributes of xml element which might be implicit in source-test, and explicit in test-serialized.
         /*
@@ -178,73 +204,73 @@ DMNDIv1.2:
          */
         Set<QName> attrWhichCanDefault = new HashSet<QName>();
         attrWhichCanDefault.addAll(Arrays.asList(new QName[]{
-                new QName("expressionLanguage"), 
-                new QName("typeLanguage"), 
-                new QName("isCollection"), 
-                new QName("hitPolicy"), 
+                new QName("expressionLanguage"),
+                new QName("typeLanguage"),
+                new QName("isCollection"),
+                new QName("hitPolicy"),
                 new QName("preferredOrientation"),
                 new QName("kind"),
                 new QName("textFormat"),
                 new QName("associationDirection"),
                 new QName("isCollapsed")
-                }));
+        }));
         Set<String> nodeHavingDefaultableAttr = new HashSet<>();
         nodeHavingDefaultableAttr.addAll(Arrays.asList(new String[]{"definitions", "decisionTable", "itemDefinition", "itemComponent", "encapsulatedLogic", "textAnnotation", "association", "DMNShape"}));
         Diff checkSimilar = DiffBuilder
-                .compare( control )
-                .withTest( test )
+                .compare(control)
+                .withTest(test)
                 .withDifferenceEvaluator(
                         DifferenceEvaluators.chain(DifferenceEvaluators.Default,
-                        ((comparison, outcome) -> {
-                            if (outcome == ComparisonResult.DIFFERENT && comparison.getType() == ComparisonType.ELEMENT_NUM_ATTRIBUTES) {
-                                if (comparison.getControlDetails().getTarget().getNodeName().equals( comparison.getTestDetails().getTarget().getNodeName() )
-                                        && nodeHavingDefaultableAttr.contains( safeStripDMNPRefix( comparison.getControlDetails().getTarget() ) )) {
-                                    return ComparisonResult.SIMILAR;
-                                }
-                            }
-                            // DMNDI/DMNDiagram#documentation is actually deserialized escaped with newlines as &#10; by the XML JDK infra. 
-                            if (outcome == ComparisonResult.DIFFERENT && comparison.getType() == ComparisonType.ATTR_VALUE) {
-                                if (comparison.getControlDetails().getTarget().getNodeName().equals( comparison.getTestDetails().getTarget().getNodeName() )
-                                        && comparison.getControlDetails().getTarget().getNodeType() == Node.ATTRIBUTE_NODE 
-                                        && comparison.getControlDetails().getTarget().getLocalName().equals("documentation")) {
-                                    return ComparisonResult.SIMILAR;
-                                }
-                            }
-                            if (outcome == ComparisonResult.DIFFERENT && comparison.getType() == ComparisonType.ATTR_NAME_LOOKUP) {
-                                boolean testIsDefaulableAttribute = false;
-                                QName whichDefaultableAttr = null;
-                                if (comparison.getControlDetails().getValue() == null && attrWhichCanDefault.contains(comparison.getTestDetails().getValue())) {
-                                    for (QName a : attrWhichCanDefault) {
-                                        boolean check = comparison.getTestDetails().getXPath().endsWith("@"+a);
-                                        if (check) {
-                                            testIsDefaulableAttribute = true;
-                                            whichDefaultableAttr = a;
-                                            continue;
-                                        }
-                                    }
-                                }
-                                if ( testIsDefaulableAttribute ) {
-                                    if (comparison.getTestDetails().getXPath().equals(comparison.getControlDetails().getXPath() + "/@" + whichDefaultableAttr )) {
-                                        // TODO missing to check the explicited option attribute has value set to the actual default value.
-                                        return ComparisonResult.SIMILAR;
-                                    }
-                                }
-                            }
-                        return outcome;
-                    })))
+                                                   ((comparison, outcome) -> {
+                                                       if (outcome == ComparisonResult.DIFFERENT && comparison.getType() == ComparisonType.ELEMENT_NUM_ATTRIBUTES) {
+                                                           if (comparison.getControlDetails().getTarget().getNodeName().equals(comparison.getTestDetails().getTarget().getNodeName())
+                                                                   && nodeHavingDefaultableAttr.contains(safeStripDMNPRefix(comparison.getControlDetails().getTarget()))) {
+                                                               return ComparisonResult.SIMILAR;
+                                                           }
+                                                       }
+                                                       // DMNDI/DMNDiagram#documentation is actually deserialized escaped with newlines as &#10; by the XML JDK infra.
+                                                       if (outcome == ComparisonResult.DIFFERENT && comparison.getType() == ComparisonType.ATTR_VALUE) {
+                                                           if (comparison.getControlDetails().getTarget().getNodeName().equals(comparison.getTestDetails().getTarget().getNodeName())
+                                                                   && comparison.getControlDetails().getTarget().getNodeType() == Node.ATTRIBUTE_NODE
+                                                                   && comparison.getControlDetails().getTarget().getLocalName().equals("documentation")) {
+                                                               return ComparisonResult.SIMILAR;
+                                                           }
+                                                       }
+                                                       if (outcome == ComparisonResult.DIFFERENT && comparison.getType() == ComparisonType.ATTR_NAME_LOOKUP) {
+                                                           boolean testIsDefaulableAttribute = false;
+                                                           QName whichDefaultableAttr = null;
+                                                           if (comparison.getControlDetails().getValue() == null && attrWhichCanDefault.contains(comparison.getTestDetails().getValue())) {
+                                                               for (QName a : attrWhichCanDefault) {
+                                                                   boolean check = comparison.getTestDetails().getXPath().endsWith("@" + a);
+                                                                   if (check) {
+                                                                       testIsDefaulableAttribute = true;
+                                                                       whichDefaultableAttr = a;
+                                                                       continue;
+                                                                   }
+                                                               }
+                                                           }
+                                                           if (testIsDefaulableAttribute) {
+                                                               if (comparison.getTestDetails().getXPath().equals(comparison.getControlDetails().getXPath() + "/@" + whichDefaultableAttr)) {
+                                                                   // TODO missing to check the explicited option attribute has value set to the actual default value.
+                                                                   return ComparisonResult.SIMILAR;
+                                                               }
+                                                           }
+                                                       }
+                                                       return outcome;
+                                                   })))
                 .ignoreWhitespace()
                 .checkForSimilar()
                 .build();
-        checkSimilar.getDifferences().forEach(System.err::println);
+        checkSimilar.getDifferences().forEach(m -> LOG.error("{}", m));
         if (!checkSimilar.getDifferences().iterator().hasNext()) {
-            System.out.println("[ EMPTY - no diffs using customized similarity ]");
+            LOG.info("[ EMPTY - no diffs using customized similarity ]");
         }
         assertFalse("XML are NOT similar: " + checkSimilar.toString(), checkSimilar.hasDifferences());
     }
 
     private String safeStripDMNPRefix(Node target) {
         if (KieDMNModelInstrumentedBase.URI_DMN.equals(target.getNamespaceURI()) ||
-            KieDMNModelInstrumentedBase.URI_DMNDI.equals(target.getNamespaceURI())) {
+                KieDMNModelInstrumentedBase.URI_DMNDI.equals(target.getNamespaceURI())) {
             return target.getLocalName();
         }
         return null;

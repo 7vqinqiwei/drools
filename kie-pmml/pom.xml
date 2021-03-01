@@ -22,7 +22,7 @@
   <parent>
     <groupId>org.drools</groupId>
     <artifactId>drools</artifactId>
-    <version>7.17.0-SNAPSHOT</version>
+    <version>7.51.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>kie-pmml</artifactId>
@@ -44,6 +44,10 @@
     <dependency>
       <groupId>org.drools</groupId>
       <artifactId>drools-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.drools</groupId>
+      <artifactId>drools-ruleunit</artifactId>
     </dependency>
     <dependency>
       <groupId>org.kie</groupId>
@@ -72,7 +76,7 @@
 
     <dependency>
       <groupId>org.jboss.spec.javax.xml.bind</groupId>
-      <artifactId>jboss-jaxb-api_2.2_spec</artifactId>
+      <artifactId>jboss-jaxb-api_2.3_spec</artifactId>
     </dependency>
     <dependency>
       <groupId>com.sun.xml.bind</groupId>
@@ -85,6 +89,12 @@
     <dependency>
       <groupId>javax.activation</groupId>
       <artifactId>activation</artifactId>
+    </dependency>
+
+    <!-- xstream -->
+    <dependency>
+      <groupId>com.thoughtworks.xstream</groupId>
+      <artifactId>xstream</artifactId>
     </dependency>
 
     <!-- Logging -->
@@ -112,8 +122,14 @@
         <artifactId>maven-bundle-plugin</artifactId>
         <configuration>
           <instructions>
-            <Bundle-Activator>org.kie.pmml.pmml_4_2.osgi.Activator</Bundle-Activator>
+            <Import-Package>
+              org.drools.ruleunit;resolution:=optional,
+              org.drools.ruleunit.impl;resolution:=optional,
+              org.drools.ruleunit.executor;resolution:=optional,
+              *
+            </Import-Package>
             <Export-Package>*</Export-Package>
+            <Bundle-Activator>org.kie.pmml.pmml_4_2.osgi.Activator</Bundle-Activator>
           </instructions>
         </configuration>
       </plugin>
@@ -152,11 +168,6 @@
           </execution>
         </executions>
       </plugin>
-      <!-- TODO: This is a temporary workaround until org.codehaus.mojo:jaxb2-maven-plugin supports JDK9.
-                 (https://github.com/mojohaus/jaxb2-maven-plugin/issues/43). We need to add the plugin back
-                 once we are sure it works on both JDK8 and JDK9.
-           Using xjc directly (instead of jaxb2-maven-plugin) to support both JDK8 and JDK9 with single configuration.
-           See https://issues.jboss.org/browse/DROOLS-1170 for more info. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>

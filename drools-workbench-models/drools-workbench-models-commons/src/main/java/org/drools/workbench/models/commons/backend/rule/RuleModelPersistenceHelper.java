@@ -19,6 +19,9 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -103,7 +106,7 @@ class RuleModelPersistenceHelper {
                                 final boolean isJavaDialect) {
         int nature = (StringUtils.isEmpty(value) ? FieldNatureType.TYPE_UNDEFINED : FieldNatureType.TYPE_LITERAL);
 
-        if (dataType == DataType.TYPE_COLLECTION) {
+        if (DataType.TYPE_COLLECTION.equals(dataType)) {
             return FieldNatureType.TYPE_FORMULA;
         } else if (DataType.TYPE_BOOLEAN.equals(dataType)) {
             if (!(Boolean.TRUE.equals(Boolean.parseBoolean(value)) || Boolean.FALSE.equals(Boolean.parseBoolean(value)))) {
@@ -116,10 +119,18 @@ class RuleModelPersistenceHelper {
                 new SimpleDateFormat(DateUtils.getDateFormatMask(),
                                      Locale.ENGLISH).parse(adjustParam(dataType,
                                                                        value,
-                                                                       Collections.EMPTY_MAP,
                                                                        isJavaDialect));
                 return FieldNatureType.TYPE_LITERAL;
             } catch (ParseException e) {
+                return FieldNatureType.TYPE_FORMULA;
+            }
+        } else if (DataType.TYPE_LOCAL_DATE.equals(dataType)) {
+            try {
+                LocalDate.parse(adjustParam(dataType,
+                                            value,
+                                            isJavaDialect), DateTimeFormatter.ofPattern(DateUtils.getDateFormatMask()));
+                return FieldNatureType.TYPE_LITERAL;
+            } catch (DateTimeParseException e) {
                 return FieldNatureType.TYPE_FORMULA;
             }
         } else if (DataType.TYPE_STRING.equals(dataType)) {
@@ -137,7 +148,6 @@ class RuleModelPersistenceHelper {
             try {
                 new BigDecimal(adjustParam(dataType,
                                            value,
-                                           Collections.EMPTY_MAP,
                                            isJavaDialect));
                 return FieldNatureType.TYPE_LITERAL;
             } catch (NumberFormatException e) {
@@ -147,7 +157,6 @@ class RuleModelPersistenceHelper {
             try {
                 new BigInteger(adjustParam(dataType,
                                            value,
-                                           Collections.EMPTY_MAP,
                                            isJavaDialect));
                 return FieldNatureType.TYPE_LITERAL;
             } catch (NumberFormatException e) {
@@ -465,6 +474,8 @@ class RuleModelPersistenceHelper {
                                                final boolean isJavaDialect) {
         if (param.startsWith("sdf.parse(\"")) {
             return DataType.TYPE_DATE;
+        } else if (param.startsWith("java.time.LocalDate.parse(\"")) {
+            return DataType.TYPE_LOCAL_DATE;
         } else if (param.startsWith("\"")) {
             return DataType.TYPE_STRING;
         } else if (param.equals("true") || param.equals("false")) {
@@ -483,12 +494,18 @@ class RuleModelPersistenceHelper {
 
     static String adjustParam(final String dataType,
                               final String param,
-                              final Map<String, String> boundParams,
                               final boolean isJavaDialect) {
         if (DataType.TYPE_DATE.equals(dataType)) {
             if (param.contains("sdf.parse(\"")) {
                 return param.substring("sdf.parse(\"".length(),
                                        param.length() - 2);
+            } else {
+                return param;
+            }
+        } else if (DataType.TYPE_LOCAL_DATE.equals(dataType)) {
+            if (param.contains("java.time.LocalDate.parse(\"")) {
+                return param.substring("java.time.LocalDate.parse(\"".length(),
+                                       param.length() - "\", dtf)".length());
             } else {
                 return param;
             }
@@ -515,8 +532,6 @@ class RuleModelPersistenceHelper {
                 return param.substring(0,
                                        param.length() - 1);
             }
-        } else if (boundParams.containsKey(param)) {
-            return "=" + param;
         }
         return param;
     }

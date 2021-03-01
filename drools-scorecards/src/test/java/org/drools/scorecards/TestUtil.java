@@ -23,13 +23,15 @@ import java.util.Map;
 import org.drools.core.definitions.InternalKnowledgePackage;
 import org.drools.core.definitions.rule.impl.RuleImpl;
 import org.drools.core.impl.InternalKnowledgeBase;
-import org.drools.core.ruleunit.RuleUnitDescription;
-import org.kie.api.runtime.rule.RuleUnit;
-import org.kie.pmml.pmml_4_2.model.PMML4UnitImpl;
+import org.drools.core.util.StringUtils;
+import org.kie.internal.ruleunit.RuleUnitDescription;
+import org.drools.ruleunit.RuleUnit;
+
+import static org.drools.core.command.runtime.pmml.PmmlConstants.DEFAULT_ROOT_PACKAGE;
 
 public final class TestUtil {
 
-    public static Class<? extends RuleUnit> getStartingRuleUnit(String startingRule, InternalKnowledgeBase ikb, List<String> possiblePackages) {
+    public static Class<? extends RuleUnit> getStartingRuleUnit( String startingRule, InternalKnowledgeBase ikb, List<String> possiblePackages) {
         Map<String, InternalKnowledgePackage> pkgs = ikb.getPackagesMap();
         RuleImpl ruleImpl;
         for (String pkgName : possiblePackages) {
@@ -39,7 +41,7 @@ public final class TestUtil {
                 if (ruleImpl != null) {
                     RuleUnitDescription descr = ikb.getRuleUnitDescriptionRegistry().getDescription(ruleImpl).orElse(null);
                     if (descr != null) {
-                        return descr.getRuleUnitClass();
+                        return (Class<? extends RuleUnit>) descr.getRuleUnitClass();
                     }
                 }
             }
@@ -50,13 +52,20 @@ public final class TestUtil {
     public static List<String> calculatePossiblePackageNames(String modelId, String... knownPackageNames) {
         List<String> packageNames = new ArrayList<>();
         String javaModelId = modelId.replaceAll("\\s", "");
+        String capJavaModelId = StringUtils.ucFirst(javaModelId);
         if (knownPackageNames != null && knownPackageNames.length > 0) {
             for (String knownPkgName : knownPackageNames) {
                 packageNames.add(knownPkgName + "." + javaModelId);
+                if (!javaModelId.equals(capJavaModelId)) {
+                    packageNames.add(knownPkgName + "." + capJavaModelId);
+                }
             }
         }
-        String basePkgName = PMML4UnitImpl.DEFAULT_ROOT_PACKAGE + "." + javaModelId;
+        String basePkgName = DEFAULT_ROOT_PACKAGE + "." + javaModelId;
         packageNames.add(basePkgName);
+        if (!javaModelId.equals(capJavaModelId)) {
+            packageNames.add(DEFAULT_ROOT_PACKAGE + "." + capJavaModelId);
+        }
         return packageNames;
     }
 

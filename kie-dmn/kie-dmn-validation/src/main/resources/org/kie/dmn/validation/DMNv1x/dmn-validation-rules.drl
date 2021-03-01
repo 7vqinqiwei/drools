@@ -24,6 +24,7 @@ import org.kie.dmn.feel.parser.feel11.FEELParser;
 import org.kie.dmn.feel.runtime.events.SyntaxErrorEvent;
 import org.kie.dmn.api.feel.runtime.events.FEELEvent;
 import org.kie.dmn.core.util.Msg;
+import org.kie.dmn.core.compiler.ImportDMNResolverUtil;
 
 import function org.kie.dmn.validation.ValidatorUtil.rightOfHash;
 import function org.kie.dmn.validation.ValidatorUtil.getRootItemDef;
@@ -34,7 +35,9 @@ declare entry-point "DMNImports" end
 
 rule MISSING_IMPORT_p1
 when
-  $elemRef : Import( $importedNS : namespace, getAdditionalAttributes().get(org.kie.dmn.model.v1_1.TImport.MODELNAME_QNAME) == null )
+  $elemRef : Import( ImportDMNResolverUtil.whichImportType(this) == ImportDMNResolverUtil.ImportType.DMN,
+                     $importedNS : namespace,
+                     getAdditionalAttributes().get(org.kie.dmn.model.v1_1.TImport.MODELNAME_QNAME) == null )
   not( Definitions( namespace == $importedNS ) from entry-point "DMNImports" )
 then
   reporter.report(DMNMessage.Severity.ERROR, $elemRef, Msg.IMPORT_NOT_FOUND_FOR_NODE, $importedNS, $elemRef.getIdentifierString());
@@ -42,7 +45,10 @@ end
 
 rule MISSING_IMPORT_p2
 when
-  $elemRef : Import( $importedNS : namespace, $importedName : getAdditionalAttributes().get(org.kie.dmn.model.v1_1.TImport.MODELNAME_QNAME) )
+  $elemRef : Import( ImportDMNResolverUtil.whichImportType(this) == ImportDMNResolverUtil.ImportType.DMN,
+                     $importedNS : namespace,
+                     getAdditionalAttributes().get(org.kie.dmn.model.v1_1.TImport.MODELNAME_QNAME) != null,
+                     $importedName : getAdditionalAttributes().get(org.kie.dmn.model.v1_1.TImport.MODELNAME_QNAME) )
   not( Definitions( namespace == $importedNS, name == $importedName ) from entry-point "DMNImports" )
 then
   reporter.report(DMNMessage.Severity.ERROR, $elemRef, Msg.IMPORT_NOT_FOUND_FOR_NODE, $importedNS + $importedName, $elemRef.getIdentifierString());
@@ -52,7 +58,7 @@ rule INVOCATION_MISSING_EXPR
 when
     $b : Binding( expression == null )
 then
-    reporter.report( DMNMessage.Severity.ERROR, $b, Msg.MISSING_EXPRESSION_FOR_PARAM_OF_INVOCATION,
+    reporter.report( DMNMessage.Severity.WARN, $b, Msg.MISSING_EXPRESSION_FOR_PARAM_OF_INVOCATION,
                      $b.getParameter() != null ? $b.getParameter().getIdentifierString() : "[unnamed]",
                      $b.getParentDRDElement().getIdentifierString() );
 end
@@ -136,7 +142,7 @@ end
 rule INVOCATION_WRONG_PARAM_COUNT
 when
     $inv : Invocation( $targetName : expression#LiteralExpression.text )
-    BusinessKnowledgeModel( name == $targetName, encapsulatedLogic.formalParameter.size != $inv.binding.size ) 
+    BusinessKnowledgeModel( name == $targetName, encapsulatedLogic!.formalParameter.size != $inv.binding.size ) 
 then
     reporter.report( DMNMessage.Severity.ERROR,  $inv , Msg.PARAMETER_COUNT_MISMATCH, $targetName, $inv.getParentDRDElement().getIdentifierString() );
 end

@@ -16,37 +16,38 @@
 
 package org.drools.model.bitmask;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
 
 import org.drools.model.BitMask;
+import org.drools.model.DomainClassMetadata;
 
 public class BitMaskUtil {
     public static final int TRAITABLE_BIT = 0;
     public static final int CUSTOM_BITS_OFFSET = 1;
     public static final String TRAITSET_FIELD_NAME = "__$$dynamic_traits_map$$";
 
-    public static BitMask calculatePatternMask( Class<?> clazz, Collection<String> listenedProperties ) {
-        List<String> accessibleProperties = getAccessibleProperties( clazz );
+    public static BitMask calculatePatternMask(DomainClassMetadata metadata, boolean isPositive, String... listenedProperties) {
         if (listenedProperties == null) {
             return EmptyBitMask.get();
         }
 
-        BitMask mask = getEmptyPropertyReactiveMask(accessibleProperties.size());
-        if (listenedProperties.contains( TRAITSET_FIELD_NAME )) {
-            mask = mask.set(TRAITABLE_BIT);
-        }
+        BitMask mask = getEmptyPropertyReactiveMask( metadata.getPropertiesSize() );
         for (String propertyName : listenedProperties) {
-            if (propertyName.equals("*")) {
+            if (propertyName.equals(isPositive ? "*" : "!*")) {
                 return AllSetBitMask.get();
             }
-            mask = setPropertyOnMask(mask, accessibleProperties, propertyName);
+            if (propertyName.startsWith("!") ^ !isPositive) {
+                continue;
+            }
+            if (propertyName.equals( TRAITSET_FIELD_NAME )) {
+                mask = mask.set( TRAITABLE_BIT );
+                continue;
+            }
+            if (!isPositive) {
+                propertyName = propertyName.substring(1);
+            }
+
+            mask = setPropertyOnMask(mask, metadata.getPropertyIndex( propertyName ));
         }
         return mask;
     }
@@ -67,35 +68,17 @@ public class BitMaskUtil {
         return mask.set(index + CUSTOM_BITS_OFFSET);
     }
 
-    private static List<String> getAccessibleProperties( Class<?> clazz ) {
-        Set<PropertyInClass> props = new TreeSet<PropertyInClass>();
-        for (Method m : clazz.getMethods()) {
-            if (m.getParameterTypes().length == 0) {
-                String propName = getter2property(m.getName());
-                if (propName != null && !propName.equals( "class" )) {
-                    props.add( new PropertyInClass( propName, m.getDeclaringClass() ) );
-                }
-            }
-        }
-
-        for (Field f : clazz.getFields()) {
-            if ( !Modifier.isFinal( f.getModifiers() ) && !Modifier.isStatic( f.getModifiers() ) ) {
-                props.add( new PropertyInClass( f.getName(), f.getDeclaringClass() ) );
-            }
-        }
-
-        List<String> accessibleProperties = new ArrayList<String>();
-        for ( PropertyInClass setter : props ) {
-            accessibleProperties.add(setter.setter);
-        }
-        return accessibleProperties;
-    }
-
     private static String getter2property(String methodName) {
         if (methodName.startsWith("get") && methodName.length() > 3) {
+            if (methodName.length() > 4 && Character.isUpperCase( methodName.charAt( 4 ) )) {
+                return methodName.substring(3);
+            }
             return Character.toLowerCase(methodName.charAt(3)) + methodName.substring(4);
         }
         if (methodName.startsWith("is") && methodName.length() > 2) {
+            if (methodName.length() > 3 && Character.isUpperCase( methodName.charAt( 3 ) )) {
+                return methodName.substring(2);
+            }
             return Character.toLowerCase(methodName.charAt(2)) + methodName.substring(3);
         }
         return null;
@@ -131,5 +114,9 @@ public class BitMaskUtil {
         public int hashCode() {
             return 29 * clazz.hashCode() + 31 * setter.hashCode();
         }
+    }
+
+    private BitMaskUtil() {
+        // It is not allowed to create instances of util classes.
     }
 }

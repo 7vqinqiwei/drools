@@ -16,6 +16,7 @@
 package org.drools.compiler.kie.builder.impl;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -28,13 +29,16 @@ import java.util.zip.ZipFile;
 
 import org.appformer.maven.support.DependencyFilter;
 import org.appformer.maven.support.PomModel;
+import org.drools.compiler.compiler.io.memory.MemoryFileSystem;
 import org.drools.compiler.kie.util.ChangeSetBuilder;
 import org.drools.compiler.kie.util.KieJarChangeSet;
 import org.drools.compiler.kproject.models.KieBaseModelImpl;
 import org.drools.compiler.kproject.models.KieModuleModelImpl;
-import org.drools.core.common.ProjectClassLoader;
-import org.drools.core.common.ResourceProvider;
+import org.drools.core.definitions.InternalKnowledgePackage;
 import org.drools.core.impl.InternalKnowledgeBase;
+import org.drools.core.io.internal.InternalResource;
+import org.drools.reflective.ResourceProvider;
+import org.drools.reflective.classloader.ProjectClassLoader;
 import org.kie.api.KieBaseConfiguration;
 import org.kie.api.builder.KieModule;
 import org.kie.api.builder.ReleaseId;
@@ -43,7 +47,6 @@ import org.kie.api.builder.model.KieBaseModel;
 import org.kie.api.builder.model.KieModuleModel;
 import org.kie.api.definition.KiePackage;
 import org.kie.api.internal.utils.ServiceRegistry;
-import org.kie.api.io.Resource;
 import org.kie.api.io.ResourceConfiguration;
 import org.kie.internal.builder.CompositeKnowledgeBuilder;
 import org.kie.internal.builder.KnowledgeBuilder;
@@ -51,12 +54,14 @@ import org.kie.internal.builder.KnowledgeBuilderConfiguration;
 import org.kie.internal.builder.ResourceChangeSet;
 import org.kie.internal.utils.ClassLoaderResolver;
 import org.kie.internal.utils.NoDepsClassLoaderResolver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.drools.compiler.kie.builder.impl.KieBuilderImpl.buildKieModule;
 import static org.drools.compiler.kie.builder.impl.KieBuilderImpl.filterFileInKBase;
 import static org.drools.compiler.kie.builder.impl.KieBuilderImpl.setDefaultsforEmptyKieModule;
 import static org.drools.compiler.kproject.ReleaseIdImpl.adapt;
-import static org.drools.core.common.ProjectClassLoader.createProjectClassLoader;
+import static org.drools.reflective.classloader.ProjectClassLoader.createProjectClassLoader;
 
 public interface InternalKieModule extends KieModule, Serializable {
 
@@ -66,7 +71,9 @@ public interface InternalKieModule extends KieModule, Serializable {
 
     Collection<KiePackage> getKnowledgePackagesForKieBase(String kieBaseName);
 
-    void cacheResultsForKieBase(String kieBaseName, Results results);
+    InternalKnowledgePackage getPackage(String packageName);
+
+    void cacheResultsForKieBase( String kieBaseName, Results results);
 
     Map<String, Results> getKnowledgeResultsCache();    
     
@@ -75,7 +82,7 @@ public interface InternalKieModule extends KieModule, Serializable {
     byte[] getBytes( );  
     
     boolean hasResource( String fileName );
-    Resource getResource( String fileName );
+    InternalResource getResource( String fileName );
 
     ResourceConfiguration getResourceConfiguration( String fileName );
     
@@ -109,9 +116,11 @@ public interface InternalKieModule extends KieModule, Serializable {
 
     PomModel getPomModel();
 
-    KnowledgeBuilderConfiguration getBuilderConfiguration( KieBaseModel kBaseModel, ClassLoader classLoader );
+    KnowledgeBuilderConfiguration createBuilderConfiguration( KieBaseModel kBaseModel, ClassLoader classLoader );
 
     InternalKnowledgeBase createKieBase( KieBaseModelImpl kBaseModel, KieProject kieProject, ResultsImpl messages, KieBaseConfiguration conf );
+
+    default void afterKieBaseCreationUpdate(String name, InternalKnowledgeBase kBase) { }
 
     ClassLoader getModuleClassLoader();
 
@@ -126,16 +135,16 @@ public interface InternalKieModule extends KieModule, Serializable {
     }
 
     default boolean isFileInKBase(KieBaseModel kieBase, String fileName) {
-        return filterFileInKBase(this, kieBase, fileName);
+        return filterFileInKBase(this, kieBase, fileName, () -> getResource( fileName ), false);
     }
 
-    default Runnable createKieBaseUpdater(KieBaseUpdateContext context) {
-        return new KieBaseUpdater( context );
+    default KieBaseUpdater createKieBaseUpdater(KieBaseUpdaterImplContext context) {
+        return new KieBaseUpdaterImpl(context );
     }
 
     default ProjectClassLoader createModuleClassLoader( ClassLoader parent ) {
         if( parent == null ) {
-            ClassLoaderResolver resolver = ServiceRegistry.getInstance().get(ClassLoaderResolver.class);
+            ClassLoaderResolver resolver = ServiceRegistry.getService(ClassLoaderResolver.class);
             if (resolver==null)  {
                 resolver = new NoDepsClassLoaderResolver();
             }
@@ -146,15 +155,46 @@ public interface InternalKieModule extends KieModule, Serializable {
 
     default CompilationCache getCompilationCache( String kbaseName) { return null; }
 
-    static InternalKieModule createKieModule( ReleaseId releaseId, File jar ) {
-        try (ZipFile zipFile = new ZipFile( jar )) {
+    default InternalKieModule cloneForIncrementalCompilation(ReleaseId releaseId, KieModuleModel kModuleModel, MemoryFileSystem newFs) {
+        throw new UnsupportedOperationException();
+    }
+
+    static InternalKieModule createKieModule(ReleaseId releaseId, File jar) {
+        if (jar.isDirectory() || !jar.getPath().endsWith( ".jar" )) {
+            return null;
+        }
+        try (ZipFile zipFile = new ZipFile(jar)) {
             ZipEntry zipEntry = zipFile.getEntry(KieModuleModelImpl.KMODULE_JAR_PATH);
-            KieModuleModel kieModuleModel = KieModuleModelImpl.fromXML(zipFile.getInputStream(zipEntry));
-            setDefaultsforEmptyKieModule(kieModuleModel);
-            return kieModuleModel != null ? InternalKieModuleProvider.get(adapt( releaseId ), kieModuleModel, jar) : null;
-        } catch ( Exception e ) {
+            if (zipEntry != null) {
+                return internalCreateKieModule( releaseId, jar, zipFile, zipEntry );
+            }
+        } catch (MalformedKieModuleException e) {
+            // if the kie module exists but it's malformed raise the error
+            throw e;
+        } catch (IOException e) {
+            // ignore: the zip file could be empty or not a jar at all
         }
         return null;
+    }
+
+    static InternalKieModule internalCreateKieModule( ReleaseId releaseId, File jar, ZipFile zipFile, ZipEntry zipEntry ) throws MalformedKieModuleException {
+        try (InputStream xmlStream = zipFile.getInputStream( zipEntry )) {
+            KieModuleModel kieModuleModel = KieModuleModelImpl.fromXML( xmlStream );
+            setDefaultsforEmptyKieModule( kieModuleModel );
+            return kieModuleModel != null ? InternalKieModuleProvider.get( adapt( releaseId ), kieModuleModel, jar ) : null;
+        } catch (Exception e) {
+            throw new MalformedKieModuleException( e );
+        }
+    }
+
+    class MalformedKieModuleException extends RuntimeException {
+        MalformedKieModuleException(Exception cause) {
+            super(cause);
+        }
+    }
+
+    default void updateKieModule(InternalKieModule newKM) {
+
     }
 
     class CompilationCache implements Serializable {
@@ -193,5 +233,9 @@ public interface InternalKieModule extends KieModule, Serializable {
             this.className = className;
             this.bytecode = bytecode;
         }
+    }
+
+    final class LocalLogger {
+        private static final Logger logger = LoggerFactory.getLogger(InternalKieModule.class);
     }
 }

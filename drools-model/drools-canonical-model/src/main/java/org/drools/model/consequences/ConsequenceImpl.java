@@ -1,5 +1,23 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ *
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.drools.model.consequences;
 
+import java.util.Arrays;
 import java.util.stream.Stream;
 
 import org.drools.model.Consequence;
@@ -18,7 +36,7 @@ public class ConsequenceImpl implements Consequence, ModelComponent {
 
     private final String language;
 
-    ConsequenceImpl(BlockN block, Variable[] variables, boolean usingDrools, boolean breaking, String language) {
+    public ConsequenceImpl(BlockN block, Variable[] variables, boolean usingDrools, boolean breaking, String language) {
         this.variables = variables;
         this.declarations = Stream.of(variables).filter( Variable::isFact ).toArray(Variable[]::new);
         this.block = block;
@@ -70,5 +88,13 @@ public class ConsequenceImpl implements Consequence, ModelComponent {
         if ( !ModelComponent.areEqualInModel( declarations, that.declarations ) ) return false;
         if ( block != null ? !block.equals( that.block ) : that.block != null ) return false;
         return language != null ? language.equals( that.language ) : that.language == null;
+    }
+
+    @Override
+    public String toString() {
+        return "ConsequenceImpl (" +
+                "variables: " + Arrays.toString(variables) + ", " +
+                "language: " + language + ", " +
+                "breaking: " + breaking + ")";
     }
 }

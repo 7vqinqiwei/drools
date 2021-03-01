@@ -24,6 +24,11 @@ import org.kie.api.builder.model.KieModuleModel;
 import org.kie.api.internal.utils.ServiceRegistry;
 
 public interface InternalKieModuleProvider {
+
+    default InternalKieModule createClasspathKieModule() {
+        return null;
+    }
+
     InternalKieModule createKieModule( ReleaseId releaseId, KieModuleModel kieProject, File file );
 
     InternalKieModule createKieModule( ReleaseId releaseId, KieModuleModel kieProject, MemoryFileSystem mfs );
@@ -49,6 +54,10 @@ public interface InternalKieModuleProvider {
         return Factory.get().createKieModule(releaseId, kieProject, mfs);
     }
 
+    static InternalKieModule getFromClasspath() {
+        return Factory.get().createClasspathKieModule();
+    }
+
     class Factory {
 
         private static class LazyHolder {
@@ -56,7 +65,7 @@ public interface InternalKieModuleProvider {
         }
 
         private static InternalKieModuleProvider createZipKieModuleProvider() {
-            InternalKieModuleProvider provider = ServiceRegistry.getInstance().get(InternalKieModuleProvider.class);
+            InternalKieModuleProvider provider = ServiceRegistry.getService(InternalKieModuleProvider.class);
             return provider != null ? provider : new DrlBasedKieModuleProvider();
         }
 

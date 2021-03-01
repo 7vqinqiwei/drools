@@ -22,12 +22,13 @@ import java.time.Period;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 import ch.obermuhlner.math.big.BigDecimalMath;
 import org.kie.dmn.api.feel.runtime.events.FEELEvent;
 import org.kie.dmn.feel.lang.EvaluationContext;
 import org.kie.dmn.feel.lang.ast.InfixOpNode;
-import org.kie.dmn.feel.lang.ast.RangeNode;
+import org.kie.dmn.feel.lang.types.impl.ComparablePeriod;
 import org.kie.dmn.feel.runtime.Range;
 import org.kie.dmn.feel.runtime.UnaryTest;
 import org.kie.dmn.feel.runtime.events.ASTEventBase;
@@ -53,7 +54,7 @@ public class CompiledFEELSemanticMappings {
 
         Comparable left = asComparable(lowEndPoint);
         Comparable right = asComparable(highEndPoint);
-        if (left == null || right == null || !compatible(left, right)) {
+        if (left != null && right != null && !compatible(left, right)) {
             ctx.notifyEvt(() -> new ASTEventBase(
                     FEELEvent.Severity.ERROR,
                     Msg.createMessage(
@@ -133,6 +134,9 @@ public class CompiledFEELSemanticMappings {
         if (test instanceof UnaryTest) {
             Boolean result = ((UnaryTest) test).apply(ctx, target);
             return result != null && result;
+        } else if (test instanceof Range) {
+            Boolean result = ((Range) test).includes(target);
+            return result != null && result;
         } else if (test == null) {
             return target == null ? true : null;
         } else {
@@ -162,6 +166,14 @@ public class CompiledFEELSemanticMappings {
         return true;
     }
 
+    public static Object getValue(EvaluationContext ctx, String varName) {
+        Object value = ctx.getValue(varName);
+        if (value == null && !ctx.isDefined(varName)) {
+            ctx.notifyEvt(() -> new ASTEventBase(FEELEvent.Severity.ERROR, Msg.createMessage(Msg.UNKNOWN_VARIABLE_REFERENCE, varName), null));
+        }
+        return value;
+    }
+
     private static boolean compatible(Comparable left, Comparable right) {
         Class<?> leftClass = left.getClass();
         Class<?> rightClass = right.getClass();
@@ -170,13 +182,15 @@ public class CompiledFEELSemanticMappings {
     }
 
     private static Comparable asComparable(Object s) {
-        if (s instanceof Comparable) {
+        if (s == null) {
+            return null;
+        } else if (s instanceof Comparable) {
             return (Comparable) s;
         } else if (s instanceof Period) {
             // period has special semantics
-            return new RangeNode.ComparablePeriod((Period) s);
+            return new ComparablePeriod((Period) s);
         } else {
-            throw new IllegalArgumentException("Unable to transform s " + s + "as Comparable");
+            throw new IllegalArgumentException("Unable to transform s " + s + " as Comparable");
         }
     }
 
@@ -254,12 +268,27 @@ public class CompiledFEELSemanticMappings {
     /**
      * FEEL spec Table 38
      * Delegates to {@link InfixOpNode} except evaluationcontext
+     * @deprecated does not support short-circuit of the operator
      */
-    public static Object and(Object left, Object right) {
-        return InfixOpNode.and(left, right, null);
+    @Deprecated
+    public static Boolean and(Object left, Object right) {
+        return (Boolean) InfixOpNode.and(left, right, null);
     }
 
-    public static Object and(boolean left, Object right) {
+    public static Boolean and(Boolean left, Supplier<Boolean> right) {
+        if (left != null) {
+            if (left.booleanValue()) {
+                return right.get();
+            } else {
+                return Boolean.FALSE; //left hand operand is false, we do not need to evaluate right side
+            }
+        } else {
+            Boolean rightAND = right.get();
+            return Boolean.FALSE.equals(rightAND) ? Boolean.FALSE : null;
+        }
+    }
+
+    public static Boolean and(boolean left, Object right) {
         if (left == true) {
             return EvalHelper.getBooleanOrNull(right);
         } else {
@@ -267,19 +296,34 @@ public class CompiledFEELSemanticMappings {
         }
     }
 
-    public static Object and(boolean left, boolean right) {
+    public static Boolean and(boolean left, boolean right) {
         return left && right;
     }
 
     /**
      * FEEL spec Table 38
      * Delegates to {@link InfixOpNode} except evaluationcontext
+     * @deprecated does not support short-circuit of the operator
      */
-    public static Object or(Object left, Object right) {
-        return InfixOpNode.or(left, right, null);
+    @Deprecated
+    public static Boolean or(Object left, Object right) {
+        return (Boolean) InfixOpNode.or(left, right, null);
+    }
+    
+    public static Boolean or(Boolean left, Supplier<Boolean> right) {
+        if (left != null) {
+            if (!left.booleanValue()) {
+                return right.get();
+            } else {
+                return Boolean.TRUE; //left hand operand is true, we do not need to evaluate right side
+            }
+        } else {
+            Boolean rightOR = right.get();
+            return Boolean.TRUE.equals(rightOR) ? Boolean.TRUE : null;
+        }
     }
 
-    public static Object or(Object left, boolean right) {
+    public static Boolean or(Object left, boolean right) {
         if (right == true) {
             return true;
         } else {
@@ -287,7 +331,7 @@ public class CompiledFEELSemanticMappings {
         }
     }
 
-    public static Object or(boolean left, boolean right) {
+    public static Boolean or(boolean left, boolean right) {
         return left || right;
     }
 
@@ -337,7 +381,8 @@ public class CompiledFEELSemanticMappings {
      * Delegates to {@link EvalHelper} except evaluationcontext
      */
     public static Boolean lte(Object left, Object right) {
-        return EvalHelper.compare(left, right, null, (l, r) -> l.compareTo(r) <= 0);
+        return or(lt(left, right),
+                  eq(left, right)); // do not use Java || to avoid potential NPE due to FEEL 3vl.
     }
 
     /**
@@ -353,7 +398,8 @@ public class CompiledFEELSemanticMappings {
      * Delegates to {@link EvalHelper} except evaluationcontext
      */
     public static Boolean gte(Object left, Object right) {
-        return EvalHelper.compare(left, right, null, (l, r) -> l.compareTo(r) >= 0);
+        return or(gt(left, right),
+                  eq(left, right)); // do not use Java || to avoid potential NPE due to FEEL 3vl.
     }
 
     /**
@@ -395,17 +441,15 @@ public class CompiledFEELSemanticMappings {
             return null;
         }
 
-        if (!value.getClass().isAssignableFrom(start.getClass())) {
+        Boolean gte = gte(value, start);
+        if (gte == null) {
             ctx.notifyEvt(() -> new ASTEventBase(FEELEvent.Severity.ERROR, Msg.createMessage(Msg.X_TYPE_INCOMPATIBLE_WITH_Y_TYPE, "value", "start"), null));
-            return null;
         }
-
-        if (!value.getClass().isAssignableFrom(end.getClass())) {
+        Boolean lte = lte(value, end);
+        if (lte == null) {
             ctx.notifyEvt(() -> new ASTEventBase(FEELEvent.Severity.ERROR, Msg.createMessage(Msg.X_TYPE_INCOMPATIBLE_WITH_Y_TYPE, "value", "end"), null));
-            return null;
         }
-
-        return gte(value, start) && lte(value, end);
+        return and(gte, lte); // do not use Java && to avoid potential NPE due to FEEL 3vl.
     }
 
     /**

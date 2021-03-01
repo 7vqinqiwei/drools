@@ -16,38 +16,38 @@
 
 package org.kie.dmn.feel.runtime.functions;
 
-import org.kie.dmn.api.feel.runtime.events.FEELEvent;
-import org.kie.dmn.api.feel.runtime.events.FEELEvent.Severity;
-import org.kie.dmn.feel.lang.EvaluationContext;
-import org.kie.dmn.feel.runtime.events.FEELEventBase;
-import org.kie.dmn.feel.runtime.events.InvalidInputEvent;
-import org.kie.dmn.feel.runtime.functions.FEELFnResult;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.kie.dmn.api.feel.runtime.events.FEELEvent;
+import org.kie.dmn.api.feel.runtime.events.FEELEvent.Severity;
+import org.kie.dmn.feel.lang.EvaluationContext;
+import org.kie.dmn.feel.runtime.events.FEELEventBase;
+import org.kie.dmn.feel.runtime.events.InvalidInputEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 public class JavaFunction
         extends BaseFEELFunction {
 
     private static final Logger logger = LoggerFactory.getLogger( JavaFunction.class );
 
-    private final List<String> parameters;
+    private final List<Param> parameters;
     private final Class        clazz;
     private final Method       method;
 
-    public JavaFunction(String name, List<String> parameters, Class clazz, Method method) {
+    public JavaFunction(String name, List<Param> params, Class clazz, Method method) {
         super( name );
-        this.parameters = parameters;
+        this.parameters = params;
         this.clazz = clazz;
         this.method = method;
     }
 
-    public List<List<String>> getParameterNames() {
+    @Override
+    public List<List<Param>> getParameters() {
         return Arrays.asList( parameters );
     }
 
@@ -60,21 +60,28 @@ public class JavaFunction
         try {
             ctx.enterFrame();
             for ( int i = 0; i < parameters.size(); i++ ) {
-                ctx.setValue( parameters.get( i ), params[i] );
+                ctx.setValue(parameters.get(i).name, params[i]);
             }
             Object[] actualParams = prepareParams( params );
             Object result = method.invoke( clazz, actualParams );
             return FEELFnResult.ofResult( result );
         } catch ( InvocationTargetException e ) {
             String message = e.getTargetException().getMessage();
-            capturedException = new FEELEventBase(Severity.ERROR, "Error invoking "+toString()+": "+message, new RuntimeException("Error invoking function " + getSignature() + ".", e));
+            capturedException = buildCaptured(e, message);
         } catch ( IllegalAccessException e ) {
             String message = e.getCause().getMessage();
-            capturedException = new FEELEventBase(Severity.ERROR, "Error invoking "+toString()+": "+message, new RuntimeException("Error invoking function " + getSignature() + ".", e));
+            capturedException = buildCaptured(e, message);
+        } catch (Exception e) {
+            String message = e.getMessage();
+            capturedException = buildCaptured(e, message);
         } finally {
             ctx.exitFrame();
         }
         return FEELFnResult.ofError( capturedException );
+    }
+
+    private FEELEventBase buildCaptured(Exception e, String message) {
+        return new FEELEventBase(Severity.ERROR, "Error invoking " + toString() + ": " + message, new RuntimeException("Error invoking function " + getSignature() + ".", e));
     }
 
     private Object[] prepareParams(Object[] params) {
@@ -82,7 +89,7 @@ public class JavaFunction
         Class[] paramTypes = method.getParameterTypes();
         params = adjustForVariableParameters( paramTypes, params );
         for( int i = 0; i < paramTypes.length; i++ ) {
-            if( paramTypes[i].isAssignableFrom( params[i].getClass() ) ) {
+            if (params[i] != null && paramTypes[i].isAssignableFrom(params[i].getClass())) {
                 actual[i] = params[i];
             } else {
                 // try to coerce
@@ -102,7 +109,7 @@ public class JavaFunction
                     } else if( paramTypes[i] == double.class || paramTypes[i] == Double.class ) {
                         actual[i] = ((Number) params[i]).doubleValue();
                     } else {
-                        throw new IllegalArgumentException( "Unable to coerce parameter "+parameters.get( 0 )+". Expected "+paramTypes[i]+" but found "+params[i].getClass() );
+                        throw new IllegalArgumentException("Unable to coerce parameter: '" + parameters.get(i).prettyFEEL() + "'. Expected " + paramTypes[i] + " but found " + params[i].getClass());
                     }
                 } else if ( params[i] instanceof String
                         && ((String) params[i]).length() == 1
@@ -112,7 +119,7 @@ public class JavaFunction
                     // Because Boolean can be also null, boolean.class is not assignable from Boolean.class. So we must coerce this.
                     actual[i] = params[i];
                 } else {
-                    throw new IllegalArgumentException( "Unable to coerce parameter "+parameters.get( 0 )+". Expected "+paramTypes[i]+" but found "+params[i].getClass() );
+                    throw new IllegalArgumentException("Unable to coerce parameter: '" + parameters.get(i).prettyFEEL() + "'. Expected " + paramTypes[i] + " but found " + params[i].getClass());
                 }
             }
         }
@@ -135,7 +142,7 @@ public class JavaFunction
     }
 
     private String getSignature() {
-        return getName() + "( " + parameters.stream().collect( Collectors.joining( ", " ) ) + " )";
+        return getName() + "( " + parameters.stream().map(Param::getName).collect(Collectors.joining(", ")) + " )";
     }
 
     @Override

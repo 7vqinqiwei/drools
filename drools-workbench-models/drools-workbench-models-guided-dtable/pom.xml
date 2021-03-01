@@ -6,7 +6,7 @@
   <parent>
     <groupId>org.drools</groupId>
     <artifactId>drools-workbench-models</artifactId>
-    <version>7.17.0-SNAPSHOT</version>
+    <version>7.51.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>drools-workbench-models-guided-dtable</artifactId>
@@ -34,10 +34,6 @@
 
     <!-- Internal dependencies -->
     <dependency>
-      <groupId>org.uberfire</groupId>
-      <artifactId>uberfire-commons</artifactId>
-    </dependency>
-    <dependency>
       <groupId>org.kie.soup</groupId>
       <artifactId>kie-soup-commons</artifactId>
     </dependency>
@@ -55,15 +51,15 @@
     </dependency>
     <dependency>
       <groupId>org.drools</groupId>
+      <artifactId>drools-mvel</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.drools</groupId>
       <artifactId>drools-core</artifactId>
     </dependency>
     <dependency>
       <groupId>org.kie.soup</groupId>
       <artifactId>kie-soup-project-datamodel-api</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.kie.soup</groupId>
-      <artifactId>kie-soup-project-datamodel-commons</artifactId>
     </dependency>
     <dependency>
       <groupId>org.drools</groupId>

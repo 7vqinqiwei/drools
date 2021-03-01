@@ -102,7 +102,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
@@ -2911,28 +2911,28 @@ public class CepEspTest extends AbstractCepEspTest {
     @Test
     public void testDeserializationWithTrackableTimerJob() throws InterruptedException {
         final String drl = "package org.drools.test;\n" +
-                     "import " + StockTick.class.getCanonicalName() + "; \n" +
-                     "global java.util.List list;\n" +
-                     "\n" +
-                     "declare StockTick\n" +
-                     "  @role( event )\n" +
-                     "  @expires( 1s )\n" +
-                     "end\n" +
-                     "\n" +
-                     "rule \"One\"\n" +
-                     "when\n" +
-                     "  StockTick( $id : seq, company == \"AAA\" ) over window:time( 1s )\n" +
-                     "then\n" +
-                     "  list.add( $id ); \n" +
-                     "end\n" +
-                     "\n" +
-                     "rule \"Two\"\n" +
-                     "when\n" +
-                     "  StockTick( $id : seq, company == \"BBB\" ) \n" +
-                     "then\n" +
-                     "  System.out.println( $id ); \n" +
-                     "  list.add( $id );\n" +
-                     "end";
+                "import " + StockTick.class.getCanonicalName() + "; \n" +
+                "global java.util.List list;\n" +
+                "\n" +
+                "declare StockTick\n" +
+                "  @role( event )\n" +
+                "  @expires( 1s )\n" +
+                "end\n" +
+                "\n" +
+                "rule \"One\"\n" +
+                "when\n" +
+                "  StockTick( $id : seq, company == \"AAA\" ) over window:time( 1s )\n" +
+                "then\n" +
+                "  list.add( $id ); \n" +
+                "end\n" +
+                "\n" +
+                "rule \"Two\"\n" +
+                "when\n" +
+                "  StockTick( $id : seq, company == \"BBB\" ) \n" +
+                "then\n" +
+                "  System.out.println( $id ); \n" +
+                "  list.add( $id );\n" +
+                "end";
 
         final KieBase kbase = KieBaseUtil.getKieBaseFromKieModuleFromDrl("cep-esp-test", kieBaseTestConfiguration, drl);
         final KieSessionConfiguration kieSessionConfiguration = KieSessionTestConfiguration.STATEFUL_REALTIME.getKieSessionConfiguration();
@@ -2960,6 +2960,41 @@ public class CepEspTest extends AbstractCepEspTest {
 
             assertEquals(2, list.size());
             assertEquals(Arrays.asList(2L, 3L), list);
+        } finally {
+            ks.dispose();
+        }
+    }
+
+    @Test
+    public void testDeserializationWithTrackableTimerJobShortExpiration() {
+        final String drl = "package org.drools.test;\n" +
+                "import " + StockTick.class.getCanonicalName() + "; \n" +
+                "global java.util.List list;\n" +
+                "\n" +
+                "declare StockTick\n" +
+                "  @role( event )\n" +
+                "  @expires( 1ms )\n" +
+                "end\n" +
+                "rule \"Two\"\n" +
+                "when\n" +
+                "  StockTick( $id : seq, company == \"BBB\" ) \n" +
+                "then\n" +
+                "  System.out.println( $id ); \n" +
+                "  list.add( $id );\n" +
+                "end";
+
+        final KieBase kbase = KieBaseUtil.getKieBaseFromKieModuleFromDrl("cep-esp-test", kieBaseTestConfiguration, drl);
+        final KieSessionConfiguration kieSessionConfiguration = KieSessionTestConfiguration.STATEFUL_REALTIME.getKieSessionConfiguration();
+        kieSessionConfiguration.setOption(TimerJobFactoryOption.get("trackable"));
+        KieSession ks = kbase.newKieSession(kieSessionConfiguration, null);
+        try {
+            ks.insert(new StockTick(2, "BBB", 1.0, 0));
+            try {
+                ks = SerializationHelper.getSerialisedStatefulKnowledgeSession(ks, true);
+            } catch (final Exception e) {
+                e.printStackTrace();
+                fail(e.getMessage());
+            }
         } finally {
             ks.dispose();
         }
@@ -4295,7 +4330,7 @@ public class CepEspTest extends AbstractCepEspTest {
         }
     }
 
-    @Test
+    @Test(timeout = 5000)
     public void testEventWithShortExpiration() throws InterruptedException {
         // DROOLS-921
         final String drl = "declare String\n" +
@@ -4315,13 +4350,14 @@ public class CepEspTest extends AbstractCepEspTest {
             assertEquals(1, ksession.fireAllRules());
             TimeUtil.sleepMillis(2L);
             assertEquals(0, ksession.fireAllRules());
-            TimeUtil.sleepMillis(30L);
-            // Expire action is put into propagation queue by timer job, so there
-            // can be a race condition where it puts it there right after previous fireAllRules
-            // flushes the queue. So there needs to be another flush -> another fireAllRules
-            // to flush the queue.
-            assertEquals(0, ksession.fireAllRules());
-            assertEquals(0, ksession.getObjects().size());
+            while (ksession.getObjects().size() != 0) {
+                TimeUtil.sleepMillis(30L);
+                // Expire action is put into propagation queue by timer job, so there
+                // can be a race condition where it puts it there right after previous fireAllRules
+                // flushes the queue. So there needs to be another flush -> another fireAllRules
+                // to flush the queue.
+                assertEquals(0, ksession.fireAllRules());
+            }
         } finally {
             ksession.dispose();
         }
@@ -5424,6 +5460,12 @@ public class CepEspTest extends AbstractCepEspTest {
             this.timestamp = parseDate(time);
         }
 
+        public EventA(final Date timestamp, final int value) {
+            this.time = timestamp.toString();
+            this.value = value;
+            this.timestamp = timestamp;
+        }
+
         public Date getTimestamp() {
             return timestamp;
         }
@@ -5659,5 +5701,85 @@ public class CepEspTest extends AbstractCepEspTest {
         } finally {
             ksession.dispose();
         }
+    }
+
+    @Test
+    public void testCollectExpiredEvent() {
+        // DROOLS-4393
+        final String drl =
+                "import java.util.Collection\n" +
+                "declare Integer @role( event ) @expires( 3h ) end\n" +
+                "declare Long @role( event ) @expires( 3h ) end\n" +
+                " " +
+                "rule SAME when\n" +
+                "  $i: Integer()\n" +
+                "  Long( intValue == $i )\n" +
+                "then\n" +
+                "  System.out.println(\"SAME\");\n" +
+                "end\n" +
+                "rule COLLECT when\n" +
+                "  Collection(size > 2) from collect (Number())\n" +
+                "then\n" +
+                "  System.out.println(\"COLLECT\");\n" +
+                "end";
+
+        final KieBase kbase = KieBaseUtil.getKieBaseFromKieModuleFromDrl("cep-esp-test", kieBaseTestConfiguration, drl);
+        final KieSession ksession = kbase.newKieSession(KieSessionTestConfiguration.STATEFUL_PSEUDO.getKieSessionConfiguration(), null);
+        try {
+
+            SessionPseudoClock clock = (( SessionPseudoClock ) ksession.getSessionClock());
+
+            ksession.insert(1);
+            clock.advanceTime(2, TimeUnit.HOURS);
+            ksession.insert(2L);
+            assertEquals(0, ksession.fireAllRules());
+
+            clock.advanceTime(2, TimeUnit.HOURS); // Should expire first event
+            ksession.insert(1L);
+            assertEquals(0, ksession.fireAllRules());
+
+        } finally {
+            ksession.dispose();
+        }
+    }
+
+    @Test
+    public void testSlidingWindowExpire() throws InterruptedException {
+        // DROOLS-4805
+        final String drl =
+                "package org.drools.compiler\n" +
+                "import " + EventA.class.getCanonicalName() + "\n" +
+                "declare EventA\n" +
+                "@role(event)\n" +
+                "@timestamp(timestamp)\n" +
+                "end\n" +
+                "rule 'delete outside of window' when\n" +
+                "   $fact : EventA( )\n" +
+                "   not( EventA( this == $fact ) over window:time( 8s ) )\n" +
+                "then\n" +
+                "    retract($fact);\n" +
+                "end\n";
+
+        // Create a session and fire rules
+        final KieBase kbase = KieBaseUtil.getKieBaseFromKieModuleFromDrl("cep-esp-test", kieBaseTestConfiguration, drl);
+        final KieSession ksession = kbase.newKieSession(KieSessionTestConfiguration.STATEFUL_PSEUDO.getKieSessionConfiguration(), null);
+        SessionPseudoClock clock = (( SessionPseudoClock ) ksession.getSessionClock());
+
+        FactHandle fh1 = ksession.insert(new EventA(new Date(6000), 1));
+        ksession.fireAllRules();
+        FactHandle fh2 = ksession.insert(new EventA(new Date(4000), 2));
+        ksession.fireAllRules();
+        FactHandle fh3 = ksession.insert(new EventA(new Date(2000), 3));
+        ksession.fireAllRules();
+
+        ksession.delete(fh3);
+        ksession.fireAllRules();
+
+        assertEquals(2, ksession.getObjects().size());
+
+        clock.advanceTime( 30, TimeUnit.SECONDS );
+        ksession.fireAllRules();
+
+        assertEquals(0, ksession.getObjects().size());
     }
 }

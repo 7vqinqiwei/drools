@@ -5,7 +5,7 @@
   <parent>
     <artifactId>drools</artifactId>
     <groupId>org.drools</groupId>
-    <version>7.17.0-SNAPSHOT</version>
+    <version>7.51.0-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
 
@@ -22,17 +22,27 @@
     <!-- Internal dependencies -->
     <dependency>
       <groupId>org.drools</groupId>
-      <artifactId>drools-core</artifactId>
+      <artifactId>drools-core-reflective</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.drools</groupId>
+      <artifactId>drools-core-dynamic</artifactId>
     </dependency>
     <dependency>
       <groupId>org.drools</groupId>
       <artifactId>drools-core</artifactId>
-      <type>test-jar</type>
-      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.drools</groupId>
       <artifactId>drools-compiler</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.drools</groupId>
+      <artifactId>drools-mvel</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.drools</groupId>
+      <artifactId>drools-serialization-protobuf</artifactId>
     </dependency>
 
     <dependency>
@@ -56,10 +66,6 @@
 
     <dependency>
       <groupId>org.apache.maven</groupId>
-      <artifactId>maven-artifact</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.maven</groupId>
       <artifactId>maven-core</artifactId>
     </dependency>
     <dependency>
@@ -69,10 +75,6 @@
     <dependency>
       <groupId>org.apache.maven</groupId>
       <artifactId>maven-model-builder</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.maven</groupId>
-      <artifactId>maven-plugin-api</artifactId>
     </dependency>
     <dependency>
       <groupId>org.apache.maven</groupId>
@@ -93,6 +95,12 @@
     <dependency>
       <groupId>org.apache.maven.wagon</groupId>
       <artifactId>wagon-provider-api</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>org.codehaus.plexus</groupId>
+          <artifactId>plexus-utils</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.sonatype.plexus</groupId>
@@ -112,10 +120,6 @@
     </dependency>
     <dependency>
       <groupId>org.eclipse.aether</groupId>
-      <artifactId>aether-util</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.eclipse.aether</groupId>
       <artifactId>aether-impl</artifactId>
     </dependency>
     <dependency>
@@ -124,19 +128,7 @@
     </dependency>
     <dependency>
       <groupId>org.eclipse.aether</groupId>
-      <artifactId>aether-spi</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.eclipse.aether</groupId>
       <artifactId>aether-transport-wagon</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.eclipse.aether</groupId>
-      <artifactId>aether-transport-file</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.eclipse.aether</groupId>
-      <artifactId>aether-transport-http</artifactId>
     </dependency>
     <dependency>
       <groupId>org.eclipse.sisu</groupId>
@@ -146,11 +138,11 @@
           <groupId>javax.el</groupId>
           <artifactId>javax.el-api</artifactId>
         </exclusion>
+        <exclusion>
+          <groupId>org.codehaus.plexus</groupId>
+          <artifactId>plexus-utils</artifactId>
+        </exclusion>
       </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.ant</groupId>
-      <artifactId>ant</artifactId>
     </dependency>
 
     <dependency>
@@ -160,6 +152,10 @@
         <exclusion>
           <groupId>commons-logging</groupId>
           <artifactId>commons-logging</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.codehaus.plexus</groupId>
+          <artifactId>plexus-utils</artifactId>
         </exclusion>
       </exclusions>
     </dependency>
@@ -173,20 +169,10 @@
       <artifactId>jcl-over-slf4j</artifactId>
       <scope>runtime</scope>
     </dependency>
-    <dependency>
-      <groupId>org.apache.httpcomponents</groupId>
-      <artifactId>httpcore</artifactId>
-    </dependency>
 
     <dependency>
       <groupId>org.sonatype.plexus</groupId>
       <artifactId>plexus-cipher</artifactId>
-    </dependency>
-
-    <dependency>
-      <groupId>com.google.inject</groupId>
-      <artifactId>guice</artifactId>
-      <classifier>no_aop</classifier>
     </dependency>
 
     <dependency>
@@ -202,7 +188,13 @@
     </dependency>
     <dependency>
       <groupId>org.drools</groupId>
-      <artifactId>drools-compiler</artifactId>
+      <artifactId>drools-core</artifactId>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.drools</groupId>
+      <artifactId>drools-mvel</artifactId>
       <type>test-jar</type>
       <scope>test</scope>
     </dependency>

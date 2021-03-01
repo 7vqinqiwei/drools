@@ -36,7 +36,7 @@ import org.kie.internal.utils.ChainedProperties;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 public abstract class AbstractValidatorTest {
 
@@ -78,6 +78,16 @@ public abstract class AbstractValidatorTest {
     protected Definitions getDefinitions(final String resourceName, final String namespace, final String modelName ) {
         final Definitions definitions = marshaller.unmarshal(getReader(resourceName));
         assertThat( definitions, notNullValue() );
+        assertThat(definitions.getNamespace(), is(namespace));
+        assertThat(definitions.getName(), is(modelName));
+        return definitions;
+    }
+
+    protected Definitions getDefinitions(final Reader resourceReader, final String namespace, final String modelName) {
+        final Definitions definitions = marshaller.unmarshal(resourceReader);
+        assertThat(definitions, notNullValue());
+        assertThat(definitions.getNamespace(), is(namespace));
+        assertThat(definitions.getName(), is(modelName));
         return definitions;
     }
 

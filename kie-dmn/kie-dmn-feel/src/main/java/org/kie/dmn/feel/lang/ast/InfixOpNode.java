@@ -24,9 +24,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.OffsetTime;
-import java.time.Period;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.chrono.ChronoPeriod;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.Temporal;
 import java.util.function.BinaryOperator;
@@ -36,6 +36,7 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import org.kie.dmn.feel.lang.EvaluationContext;
 import org.kie.dmn.feel.lang.Type;
 import org.kie.dmn.feel.lang.types.BuiltInType;
+import org.kie.dmn.feel.lang.types.impl.ComparablePeriod;
 import org.kie.dmn.feel.util.EvalHelper;
 
 public class InfixOpNode
@@ -162,37 +163,63 @@ public class InfixOpNode
 
     @Override
     public Object evaluate(EvaluationContext ctx) {
-        if (left == null) return null;
-        Object left = this.left.evaluate( ctx );
-        Object right = this.right.evaluate( ctx );
+        if (this.left == null) return null;
         switch ( operator ) {
             case ADD:
-                return add( left, right, ctx );
+                return add(this.left.evaluate(ctx), this.right.evaluate(ctx), ctx);
             case SUB:
-                return sub( left, right, ctx );
+                return sub(this.left.evaluate(ctx), this.right.evaluate(ctx), ctx);
             case MULT:
-                return mult( left, right, ctx );
+                return mult(this.left.evaluate(ctx), this.right.evaluate(ctx), ctx);
             case DIV:
-                return div( left, right, ctx );
+                return div(this.left.evaluate(ctx), this.right.evaluate(ctx), ctx);
             case POW:
-                return math( left, right, ctx, (l, r) -> BigDecimalMath.pow( l, r, MathContext.DECIMAL128 ) );
+                return math(this.left.evaluate(ctx), this.right.evaluate(ctx), ctx, (l, r) -> BigDecimalMath.pow(l, r, MathContext.DECIMAL128));
             case AND:
-                return and( left, right, ctx );
+                Boolean leftAND = EvalHelper.getBooleanOrNull(this.left.evaluate(ctx));
+                if (leftAND != null) {
+                    if (leftAND.booleanValue()) {
+                        return EvalHelper.getBooleanOrNull(this.right.evaluate(ctx));
+                    } else {
+                        return Boolean.FALSE; //left hand operand is false, we do not need to evaluate right side
+                    }
+                } else {
+                    Boolean rightAND = EvalHelper.getBooleanOrNull(this.right.evaluate(ctx));
+                    return Boolean.FALSE.equals(rightAND) ? Boolean.FALSE : null;
+                }
             case OR:
-                return or( left, right, ctx );
+                Boolean leftOR = EvalHelper.getBooleanOrNull(this.left.evaluate(ctx));
+                if (leftOR != null) {
+                    if (!leftOR.booleanValue()) {
+                        return EvalHelper.getBooleanOrNull(this.right.evaluate(ctx));
+                    } else {
+                        return Boolean.TRUE; //left hand operand is true, we do not need to evaluate right side
+                    }
+                } else {
+                    Boolean rightOR = EvalHelper.getBooleanOrNull(this.right.evaluate(ctx));
+                    return Boolean.TRUE.equals(rightOR) ? Boolean.TRUE : null;
+                }
             case LTE:
-                return EvalHelper.compare( left, right, ctx, (l, r) -> l.compareTo( r ) <= 0 );
+                Object leftLTE = this.left.evaluate(ctx);
+                Object rightLTE = this.right.evaluate(ctx);
+                return or(EvalHelper.compare(leftLTE, rightLTE, ctx, (l, r) -> l.compareTo(r) < 0),
+                          EvalHelper.isEqual(leftLTE, rightLTE, ctx),
+                          ctx); // do not use Java || to avoid potential NPE due to FEEL 3vl.
             case LT:
-                return EvalHelper.compare( left, right, ctx, (l, r) -> l.compareTo( r ) < 0 );
+                return EvalHelper.compare(this.left.evaluate(ctx), this.right.evaluate(ctx), ctx, (l, r) -> l.compareTo(r) < 0);
             case GT:
-                return EvalHelper.compare( left, right, ctx, (l, r) -> l.compareTo( r ) > 0 );
+                return EvalHelper.compare(this.left.evaluate(ctx), this.right.evaluate(ctx), ctx, (l, r) -> l.compareTo(r) > 0);
             case GTE:
-                return EvalHelper.compare( left, right, ctx, (l, r) -> l.compareTo( r ) >= 0 );
+                Object leftGTE = this.left.evaluate(ctx);
+                Object rightGTE = this.right.evaluate(ctx);
+                return or(EvalHelper.compare(leftGTE, rightGTE, ctx, (l, r) -> l.compareTo(r) > 0),
+                          EvalHelper.isEqual(leftGTE, rightGTE, ctx),
+                          ctx); // do not use Java || to avoid potential NPE due to FEEL 3vl.
             case EQ:
-                return EvalHelper.isEqual( left, right, ctx );
+                return EvalHelper.isEqual(this.left.evaluate(ctx), this.right.evaluate(ctx), ctx);
             case NE:
-                Boolean result = EvalHelper.isEqual( left, right, ctx );
-                return result != null ? ! result : null;
+                Boolean result = EvalHelper.isEqual(this.left.evaluate(ctx), this.right.evaluate(ctx), ctx);
+                return result != null ? !result : null;
             default:
                 return null;
         }
@@ -203,18 +230,18 @@ public class InfixOpNode
             return null;
         } else if ( left instanceof String && right instanceof String ) {
             return ((String) left) + ((String) right);
-        } else if ( left instanceof Period && right instanceof Period ) {
-            return ((Period) left).plus( (Period) right);
+        } else if (left instanceof ChronoPeriod && right instanceof ChronoPeriod) {
+            return new ComparablePeriod(((ChronoPeriod) left).plus((ChronoPeriod) right));
         } else if ( left instanceof Duration && right instanceof Duration ) {
             return ((Duration) left).plus( (Duration) right);
-        } else if ( left instanceof ZonedDateTime && right instanceof Period ) {
-            return ((ZonedDateTime) left).plus( (Period) right);
-        } else if ( left instanceof OffsetDateTime && right instanceof Period ) {
-            return ((OffsetDateTime) left).plus( (Period) right);
-        } else if ( left instanceof LocalDateTime && right instanceof Period ) {
-            return ((LocalDateTime) left).plus( (Period) right);
-        } else if ( left instanceof LocalDate && right instanceof Period ) {
-            return ((LocalDate) left).plus( (Period) right);
+        } else if (left instanceof ZonedDateTime && right instanceof ChronoPeriod) {
+            return ((ZonedDateTime) left).plus((ChronoPeriod) right);
+        } else if (left instanceof OffsetDateTime && right instanceof ChronoPeriod) {
+            return ((OffsetDateTime) left).plus((ChronoPeriod) right);
+        } else if (left instanceof LocalDateTime && right instanceof ChronoPeriod) {
+            return ((LocalDateTime) left).plus((ChronoPeriod) right);
+        } else if (left instanceof LocalDate && right instanceof ChronoPeriod) {
+            return ((LocalDate) left).plus((ChronoPeriod) right);
         } else if ( left instanceof ZonedDateTime && right instanceof Duration ) {
             return ((ZonedDateTime) left).plus( (Duration) right);
         } else if ( left instanceof OffsetDateTime && right instanceof Duration ) {
@@ -223,14 +250,14 @@ public class InfixOpNode
             return ((LocalDateTime) left).plus( (Duration) right);
         } else if ( left instanceof LocalDate && right instanceof Duration ) {
             return ((LocalDate) left).plusDays( ((Duration) right).toDays() );
-        } else if ( left instanceof Period && right instanceof ZonedDateTime ) {
-            return ((ZonedDateTime) right).plus( (Period) left);
-        } else if ( left instanceof Period && right instanceof OffsetDateTime ) {
-            return ((OffsetDateTime) right).plus( (Period) left);
-        } else if ( left instanceof Period && right instanceof LocalDateTime ) {
-            return ((LocalDateTime) right).plus( (Period) left);
-        } else if ( left instanceof Period && right instanceof LocalDate ) {
-            return ((LocalDate) right).plus( (Period) left);
+        } else if (left instanceof ChronoPeriod && right instanceof ZonedDateTime) {
+            return ((ZonedDateTime) right).plus((ChronoPeriod) left);
+        } else if (left instanceof ChronoPeriod && right instanceof OffsetDateTime) {
+            return ((OffsetDateTime) right).plus((ChronoPeriod) left);
+        } else if (left instanceof ChronoPeriod && right instanceof LocalDateTime) {
+            return ((LocalDateTime) right).plus((ChronoPeriod) left);
+        } else if (left instanceof ChronoPeriod && right instanceof LocalDate) {
+            return ((LocalDate) right).plus((ChronoPeriod) left);
         } else if ( left instanceof Duration && right instanceof ZonedDateTime ) {
             return ((ZonedDateTime) right).plus( (Duration) left);
         } else if ( left instanceof Duration && right instanceof OffsetDateTime ) {
@@ -268,18 +295,18 @@ public class InfixOpNode
                 return Duration.ofDays( ChronoUnit.DAYS.between( (LocalDate) right, (LocalDate) left ) );
             }
             return Duration.between( (Temporal) right, (Temporal) left);
-        } else if ( left instanceof Period && right instanceof Period ) {
-            return ((Period) left).minus( (Period) right);
+        } else if (left instanceof ChronoPeriod && right instanceof ChronoPeriod) {
+            return new ComparablePeriod(((ChronoPeriod) left).minus((ChronoPeriod) right));
         } else if ( left instanceof Duration && right instanceof Duration ) {
             return ((Duration) left).minus( (Duration) right);
-        } else if ( left instanceof ZonedDateTime && right instanceof Period ) {
-            return ((ZonedDateTime) left).minus( (Period) right);
-        } else if ( left instanceof OffsetDateTime && right instanceof Period ) {
-            return ((OffsetDateTime) left).minus( (Period) right);
-        } else if ( left instanceof LocalDateTime && right instanceof Period ) {
-            return ((LocalDateTime) left).minus( (Period) right);
-        } else if ( left instanceof LocalDate && right instanceof Period ) {
-            return ((LocalDate) left).minus( (Period) right);
+        } else if (left instanceof ZonedDateTime && right instanceof ChronoPeriod) {
+            return ((ZonedDateTime) left).minus((ChronoPeriod) right);
+        } else if (left instanceof OffsetDateTime && right instanceof ChronoPeriod) {
+            return ((OffsetDateTime) left).minus((ChronoPeriod) right);
+        } else if (left instanceof LocalDateTime && right instanceof ChronoPeriod) {
+            return ((LocalDateTime) left).minus((ChronoPeriod) right);
+        } else if (left instanceof LocalDate && right instanceof ChronoPeriod) {
+            return ((LocalDate) left).minus((ChronoPeriod) right);
         } else if ( left instanceof ZonedDateTime && right instanceof Duration ) {
             return ((ZonedDateTime) left).minus( (Duration) right);
         } else if ( left instanceof OffsetDateTime && right instanceof Duration ) {
@@ -306,12 +333,12 @@ public class InfixOpNode
             return Duration.ofSeconds( EvalHelper.getBigDecimalOrNull( left ).multiply( EvalHelper.getBigDecimalOrNull( ((Duration)right).getSeconds() ), MathContext.DECIMAL128 ).longValue() );
         } else if ( left instanceof Duration && right instanceof Duration ) {
             return EvalHelper.getBigDecimalOrNull( ((Duration) left).getSeconds() ).multiply( EvalHelper.getBigDecimalOrNull( ((Duration)right).getSeconds() ), MathContext.DECIMAL128 );
-        } else if ( left instanceof Period && right instanceof Number ) {
-            return Period.ofMonths( EvalHelper.getBigDecimalOrNull( ((Period)left).toTotalMonths() ).multiply( EvalHelper.getBigDecimalOrNull( ((Number) right).longValue() ), MathContext.DECIMAL128 ).intValue() );
-        } else if ( left instanceof Number && right instanceof Period ) {
-            return Period.ofMonths( EvalHelper.getBigDecimalOrNull( left ).multiply( EvalHelper.getBigDecimalOrNull( ((Period)right).toTotalMonths() ), MathContext.DECIMAL128 ).intValue() );
-        } else if ( left instanceof Period && right instanceof Period ) {
-            return EvalHelper.getBigDecimalOrNull( ((Period) left).toTotalMonths() ).multiply( EvalHelper.getBigDecimalOrNull( ((Period)right).toTotalMonths() ), MathContext.DECIMAL128 );
+        } else if (left instanceof ChronoPeriod && right instanceof Number) {
+            return ComparablePeriod.ofMonths(EvalHelper.getBigDecimalOrNull(ComparablePeriod.toTotalMonths((ChronoPeriod) left)).multiply(EvalHelper.getBigDecimalOrNull(((Number) right).longValue()), MathContext.DECIMAL128).intValue());
+        } else if (left instanceof Number && right instanceof ChronoPeriod) {
+            return ComparablePeriod.ofMonths(EvalHelper.getBigDecimalOrNull(left).multiply(EvalHelper.getBigDecimalOrNull(ComparablePeriod.toTotalMonths((ChronoPeriod) right)), MathContext.DECIMAL128).intValue());
+        } else if (left instanceof ChronoPeriod && right instanceof ChronoPeriod) {
+            return EvalHelper.getBigDecimalOrNull(ComparablePeriod.toTotalMonths((ChronoPeriod) left)).multiply(EvalHelper.getBigDecimalOrNull(ComparablePeriod.toTotalMonths((ChronoPeriod) right)), MathContext.DECIMAL128);
         } else {
             return math( left, right, ctx, (l, r) -> l.multiply( r, MathContext.DECIMAL128 ) );
         }
@@ -326,12 +353,12 @@ public class InfixOpNode
             return Duration.ofSeconds( EvalHelper.getBigDecimalOrNull( left ).divide( EvalHelper.getBigDecimalOrNull( ((Duration)right).getSeconds() ), MathContext.DECIMAL128 ).longValue() );
         } else if ( left instanceof Duration && right instanceof Duration ) {
             return EvalHelper.getBigDecimalOrNull( ((Duration) left).getSeconds() ).divide( EvalHelper.getBigDecimalOrNull( ((Duration)right).getSeconds() ), MathContext.DECIMAL128 );
-        } else if ( left instanceof Period && right instanceof Number ) {
-            return Period.ofMonths( EvalHelper.getBigDecimalOrNull( ((Period)left).toTotalMonths() ).divide( EvalHelper.getBigDecimalOrNull( ((Number) right).longValue() ), MathContext.DECIMAL128 ).intValue() );
-        } else if ( left instanceof Number && right instanceof Period ) {
-            return Period.ofMonths( EvalHelper.getBigDecimalOrNull( left ).divide( EvalHelper.getBigDecimalOrNull( ((Period)right).toTotalMonths() ), MathContext.DECIMAL128 ).intValue() );
-        } else if ( left instanceof Period && right instanceof Period ) {
-            return EvalHelper.getBigDecimalOrNull( ((Period) left).toTotalMonths() ).divide( EvalHelper.getBigDecimalOrNull( ((Period)right).toTotalMonths() ), MathContext.DECIMAL128 );
+        } else if (left instanceof ChronoPeriod && right instanceof Number) {
+            return ComparablePeriod.ofMonths(EvalHelper.getBigDecimalOrNull(ComparablePeriod.toTotalMonths((ChronoPeriod) left)).divide(EvalHelper.getBigDecimalOrNull(((Number) right).longValue()), MathContext.DECIMAL128).intValue());
+        } else if (left instanceof Number && right instanceof ChronoPeriod) {
+            return ComparablePeriod.ofMonths(EvalHelper.getBigDecimalOrNull(left).divide(EvalHelper.getBigDecimalOrNull(ComparablePeriod.toTotalMonths((ChronoPeriod) right)), MathContext.DECIMAL128).intValue());
+        } else if (left instanceof ChronoPeriod && right instanceof ChronoPeriod) {
+            return EvalHelper.getBigDecimalOrNull(ComparablePeriod.toTotalMonths((ChronoPeriod) left)).divide(EvalHelper.getBigDecimalOrNull(ComparablePeriod.toTotalMonths((ChronoPeriod) right)), MathContext.DECIMAL128);
         } else {
             return math( left, right, ctx, (l, r) -> l.divide( r, MathContext.DECIMAL128 ) );
         }
@@ -353,7 +380,9 @@ public class InfixOpNode
 
     /**
      * Implements the ternary logic AND operation
+     * @deprecated this variant do not allow short-circuit of the operator
      */
+    @Deprecated
     public static Object and(Object left, Object right, EvaluationContext ctx) {
         Boolean l = EvalHelper.getBooleanOrNull( left );
         Boolean r = EvalHelper.getBooleanOrNull( right );
@@ -368,7 +397,9 @@ public class InfixOpNode
 
     /**
      * Implements the ternary logic OR operation
+     * @deprecated this variant do not allow short-circuit of the operator
      */
+    @Deprecated
     public static Object or(Object left, Object right, EvaluationContext ctx) {
         Boolean l = EvalHelper.getBooleanOrNull( left );
         Boolean r = EvalHelper.getBooleanOrNull( right );

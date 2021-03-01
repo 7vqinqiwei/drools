@@ -38,7 +38,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.hasSize;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.kie.dmn.core.util.DMNTestUtil.getAndAssertModelNoErrors;
 import static org.kie.dmn.core.util.DynamicTypeUtils.entry;
 import static org.kie.dmn.core.util.DynamicTypeUtils.mapOf;
@@ -370,6 +370,67 @@ public class ImportsTest extends BaseInterpretedVsCompiledTest {
         assertThat(modelC.getImportChainAliases(), hasEntry(is("http://www.trisotech.com/dmn/definitions/_ae5b3c17-1ac3-4e1d-b4f9-2cf861aec6d9"),
                                                             containsInAnyOrder(Arrays.asList("Model B2", "modelA"),
                                                                                Arrays.asList("Model B", "modelA"))));
+    }
+
+    @Test
+    public void testImportDependenciesBKMchain() {
+        final DMNRuntime runtime = DMNRuntimeUtil.createRuntimeWithAdditionalResources("base join.dmn",
+                                                                                       this.getClass(),
+                                                                                       "use join.dmn");
+
+        final DMNModel importedModel = runtime.getModel("http://www.trisotech.com/definitions/_c8fc1424-d3fb-40c5-81df-22b409891192",
+                                                        "base join");
+        assertThat(importedModel, notNullValue());
+        assertThat(DMNRuntimeUtil.formatMessages(importedModel.getMessages()), importedModel.hasErrors(), is(false));
+
+        final DMNModel dmnModel = runtime.getModel("http://www.trisotech.com/definitions/_2b5e6bbd-2524-4b72-bff9-ca5ecdcea172",
+                                                   "use join");
+        assertThat(dmnModel, notNullValue());
+        assertThat(DMNRuntimeUtil.formatMessages(dmnModel.getMessages()), dmnModel.hasErrors(), is(false));
+
+        final DMNContext context = runtime.newContext();
+        context.set("name", "John Doe");
+
+        final DMNResult evaluateAll = runtime.evaluateAll(dmnModel, context);
+        assertThat(DMNRuntimeUtil.formatMessages(evaluateAll.getMessages()), evaluateAll.hasErrors(), is(false));
+
+        LOG.debug("{}", evaluateAll);
+        assertThat(evaluateAll.getDecisionResultByName("greet").getResult(), is("Hi, John Doe"));
+        assertThat(evaluateAll.getDecisionResultByName("greet2").getResult(), is("Hello, John Doe"));
+    }
+
+    @Test
+    public void testImportInstanceOf() {
+        final DMNRuntime runtime = DMNRuntimeUtil.createRuntimeWithAdditionalResources("instanceof base model.dmn",
+                                                                                       this.getClass(),
+                                                                                       "instanceof checks.dmn");
+
+        final DMNModel importedModel = runtime.getModel("http://www.trisotech.com/definitions/_6ecff8d8-42d6-4e77-9759-83c2f3fae418",
+                                                        "base model");
+        assertThat(importedModel, notNullValue());
+        assertThat(DMNRuntimeUtil.formatMessages(importedModel.getMessages()), importedModel.hasErrors(), is(false));
+
+        final DMNModel dmnModel = runtime.getModel("http://www.trisotech.com/definitions/_153cb253-2904-468e-b6dc-42bc016c0ddd",
+                                                   "checks");
+        assertThat(dmnModel, notNullValue());
+        assertThat(DMNRuntimeUtil.formatMessages(dmnModel.getMessages()), dmnModel.hasErrors(), is(false));
+
+        final DMNContext context = runtime.newContext();
+
+        final DMNResult evaluateAll = runtime.evaluateAll(dmnModel, context);
+        assertThat(DMNRuntimeUtil.formatMessages(evaluateAll.getMessages()), evaluateAll.hasErrors(), is(false));
+
+        LOG.debug("{}", evaluateAll);
+        assertThat(evaluateAll.getDecisionResultByName("is a list?").getResult(), is(true));
+        assertThat(evaluateAll.getDecisionResultByName("is a base person?").getResult(), is(true));
+        assertThat(evaluateAll.getDecisionResultByName("is a this model person?").getResult(), is(true));
+        assertThat(evaluateAll.getDecisionResultByName("with missing age is a base person?").getResult(), is(false));
+        assertThat(evaluateAll.getDecisionResultByName("with missing age is a this model person?").getResult(), is(false));
+        assertThat(evaluateAll.getDecisionResultByName("with address is a this model person?").getResult(), is(true));
+        assertThat(evaluateAll.getDecisionResultByName("is yes no persons?").getResult(), is(false));
+        assertThat(evaluateAll.getDecisionResultByName("is yes no collection of ps?").getResult(), is(false));
+        assertThat(evaluateAll.getDecisionResultByName("is yes yes persons?").getResult(), is(true));
+        assertThat(evaluateAll.getDecisionResultByName("is yes yes collection of ps?").getResult(), is(true));
     }
 }
 

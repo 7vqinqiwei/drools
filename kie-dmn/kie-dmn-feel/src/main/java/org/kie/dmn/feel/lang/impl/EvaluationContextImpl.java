@@ -58,15 +58,24 @@ public class EvaluationContextImpl implements EvaluationContext {
         push( global );
     }
 
+    @Deprecated
     public EvaluationContextImpl(FEELEventListenersManager eventsManager, DMNRuntime dmnRuntime) {
         this(dmnRuntime.getRootClassLoader(), eventsManager);
         this.dmnRuntime = dmnRuntime;
     }
 
+    private EvaluationContextImpl(FEELEventListenersManager eventsManager) {
+        this.eventsManager = eventsManager;
+    }
 
     @Override
     public EvaluationContext current() {
-        return new EvaluationContextImpl(rootClassLoader, eventsManager, new ArrayDeque<>(stack));
+        EvaluationContextImpl ec = new EvaluationContextImpl(eventsManager);
+        ec.stack = stack.clone();
+        ec.rootClassLoader = this.rootClassLoader;
+        ec.dmnRuntime = this.dmnRuntime;
+        ec.performRuntimeTypeCheck = this.performRuntimeTypeCheck;
+        return ec;
     }
 
     public void push(ExecutionFrame obj) {
@@ -88,6 +97,10 @@ public class EvaluationContextImpl implements EvaluationContext {
     @Override
     public void enterFrame() {
         push( new ExecutionFrameImpl( peek() /*, symbols, scope*/ ) );
+    }
+
+    public void enterFrame(int size) {
+        push(new ExecutionFrameImpl(peek(), size));
     }
 
     @Override
@@ -179,6 +192,10 @@ public class EvaluationContextImpl implements EvaluationContext {
     @Override
     public DMNRuntime getDMNRuntime() {
         return dmnRuntime;
+    }
+
+    public void setDMNRuntime(DMNRuntime runtime) {
+        this.dmnRuntime = runtime;
     }
 
     @Override

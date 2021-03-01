@@ -21,6 +21,10 @@ import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.drools.core.base.CoreComponentsBuilder;
+
+import static org.kie.soup.xstream.XStreamUtils.createTrustingXStream;
+
 public class Drools {
 
     private static Pattern VERSION_PAT = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)([\\.-](.*))?");
@@ -37,23 +41,12 @@ public class Drools {
     static {
         droolsFullVersion = Drools.class.getPackage().getImplementationVersion();
         if (droolsFullVersion == null || droolsFullVersion.equals("0.0")) {
-            InputStream is = null;
-            try {
-                is = Drools.class.getClassLoader().getResourceAsStream("drools.versions.properties");
+            try (InputStream is = Drools.class.getClassLoader().getResourceAsStream("drools.versions.properties")) {
                 Properties properties = new Properties();
                 properties.load(is);
                 droolsFullVersion = properties.get("drools.version").toString();
-                is.close();
             } catch ( IOException e ) {
                 throw new RuntimeException(e);
-            } finally {
-                if (is != null) {
-                    try {
-                        is.close();
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
             }
         }
 
@@ -114,5 +107,30 @@ public class Drools {
 
     public static boolean isJndiAvailable() {
         return jndiAvailable;
+    }
+
+    public static boolean hasMvel() {
+        return CoreComponentsBuilder.present();
+    }
+
+    public static boolean isNativeImage() {
+        return CoreComponentsBuilder.isNativeImage();
+    }
+
+    public static boolean hasXSTream() {
+        return XSTreamChekcer.HAS_XSTREAM;
+    }
+
+    private static class XSTreamChekcer {
+        private static final boolean HAS_XSTREAM = checkXStream();
+
+        private static boolean checkXStream() {
+            try {
+                createTrustingXStream();
+                return true;
+            } catch (Throwable e){
+                return false;
+            }
+        }
     }
 }

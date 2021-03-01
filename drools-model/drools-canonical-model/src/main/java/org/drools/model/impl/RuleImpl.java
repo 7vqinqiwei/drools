@@ -1,3 +1,20 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ *
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.drools.model.impl;
 
 import java.util.Collections;
@@ -31,6 +48,10 @@ public class RuleImpl implements Rule, ModelComponent {
         this.consequences.put( DEFAULT_CONSEQUENCE_NAME, consequence );
         this.attributes = attributes;
         this.metaAttributes = metaAttributes;
+    }
+
+    public RuleImpl(String pkg, String name, String unit, CompositePatterns view) {
+        this(pkg, name, unit, view, Collections.emptyMap(), Collections.emptyMap());
     }
 
     public RuleImpl(String pkg, String name, String unit, CompositePatterns view, Map<Attribute, Object> attributes, Map<String, Object> metaAttributes) {
@@ -106,6 +127,6 @@ public class RuleImpl implements Rule, ModelComponent {
 
     @Override
     public String toString() {
-        return "Rule: " +  pkg + "." + name;
+        return "Rule: " +  pkg + "." + name + " (view: " + view + ", consequences: " + consequences + ")";
     }
 }

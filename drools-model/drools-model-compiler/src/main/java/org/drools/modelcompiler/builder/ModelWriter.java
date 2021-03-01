@@ -1,3 +1,20 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ *
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.drools.modelcompiler.builder;
 
 import java.util.ArrayList;
@@ -7,87 +24,66 @@ import java.util.stream.Collectors;
 
 import org.drools.compiler.compiler.io.memory.MemoryFileSystem;
 import org.drools.core.util.Drools;
-import org.drools.javaparser.ast.CompilationUnit;
-import org.drools.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import org.drools.javaparser.printer.PrettyPrinter;
-import org.drools.modelcompiler.builder.PackageModel.RuleSourceResult;
+import org.kie.api.builder.ReleaseId;
 
-import static org.drools.modelcompiler.CanonicalKieModule.MODEL_FILE;
 import static org.drools.modelcompiler.CanonicalKieModule.MODEL_VERSION;
-import static org.drools.modelcompiler.builder.JavaParserCompiler.getPrettyPrinter;
+import static org.drools.modelcompiler.CanonicalKieModule.getModelFileWithGAV;
 
 public class ModelWriter {
 
-    public Result writeModel(MemoryFileSystem srcMfs, Collection<PackageModel> packageModels) {
-        List<String> sourceFiles = new ArrayList<>();
+    private final String basePath;
+
+    public ModelWriter() {
+        this("src/main/java");
+    }
+
+    public ModelWriter(String basePath) {
+        this.basePath = basePath;
+    }
+
+    public Result writeModel(MemoryFileSystem srcMfs, Collection<PackageSources> packageSources) {
+        List<GeneratedFile> generatedFiles = new ArrayList<>();
         List<String> modelFiles = new ArrayList<>();
 
-        PrettyPrinter prettyPrinter = getPrettyPrinter();
+        for (PackageSources pkgSources : packageSources) {
+            pkgSources.collectGeneratedFiles( generatedFiles );
+            modelFiles.addAll( pkgSources.getModelNames() );
+        }
 
-        for (PackageModel pkgModel : packageModels) {
-            String pkgName = pkgModel.getName();
-            String folderName = pkgName.replace( '.', '/' );
-
-            for (ClassOrInterfaceDeclaration generatedPojo : pkgModel.getGeneratedPOJOsSource()) {
-                final String source = JavaParserCompiler.toPojoSource( pkgModel.getName(), pkgModel.getImports(), pkgModel.getStaticImports(), generatedPojo );
-                pkgModel.logRule( source );
-                String pojoSourceName = "src/main/java/" + folderName + "/" + generatedPojo.getName() + ".java";
-                srcMfs.write( pojoSourceName, source.getBytes() );
-                sourceFiles.add( pojoSourceName );
-            }
-
-            for (GeneratedClassWithPackage generatedPojo : pkgModel.getGeneratedAccumulateClasses()) {
-                final String source = JavaParserCompiler.toPojoSource( pkgModel.getName(), generatedPojo.getImports(), pkgModel.getStaticImports(), generatedPojo.getGeneratedClass() );
-                pkgModel.logRule( source );
-                String pojoSourceName = "src/main/java/" + folderName + "/" + generatedPojo.getGeneratedClass().getName() + ".java";
-                srcMfs.write( pojoSourceName, source.getBytes() );
-                sourceFiles.add( pojoSourceName );
-            }
-
-            RuleSourceResult rulesSourceResult = pkgModel.getRulesSource();
-            // main rules file:
-            String rulesFileName = pkgModel.getRulesFileName();
-            String rulesSourceName = "src/main/java/" + folderName + "/" + rulesFileName + ".java";
-            String rulesSource = prettyPrinter.print( rulesSourceResult.getMainRuleClass() );
-            pkgModel.logRule( rulesSource );
-            byte[] rulesBytes = rulesSource.getBytes();
-            srcMfs.write( rulesSourceName, rulesBytes );
-            modelFiles.add( pkgName + "." + rulesFileName );
-            sourceFiles.add( rulesSourceName );
-            // manage additional classes, please notice to not add to modelFiles.
-            for (CompilationUnit cu : rulesSourceResult.getSplitted()) {
-                String addFileName = cu.findFirst( ClassOrInterfaceDeclaration.class ).get().getNameAsString();
-                String addSourceName = "src/main/java/" + folderName + "/" + addFileName + ".java";
-                String addSource = prettyPrinter.print( cu );
-                pkgModel.logRule( addSource );
-                byte[] addBytes = addSource.getBytes();
-                srcMfs.write( addSourceName, addBytes );
-                sourceFiles.add( addSourceName );
-            }
+        List<String> sourceFiles = new ArrayList<>();
+        for (GeneratedFile generatedFile : generatedFiles) {
+            String path = basePath + "/" + generatedFile.getPath();
+            sourceFiles.add(path);
+            srcMfs.write(path, generatedFile.getData());
         }
 
         return new Result(sourceFiles, modelFiles);
     }
 
-    public void writeModelFile( List<String> modelSources, MemoryFileSystem trgMfs) {
+    private String pojoName(String folderName, String nameAsString) {
+        return basePath + "/" + folderName + "/" + nameAsString + ".java";
+    }
+
+    public String getBasePath() {
+        return basePath;
+    }
+
+    public void writeModelFile( Collection<String> modelSources, MemoryFileSystem trgMfs, ReleaseId releaseId) {
         String pkgNames = MODEL_VERSION + Drools.getFullVersion() + "\n";
-        if(!modelSources.isEmpty()) {
+        if (!modelSources.isEmpty()) {
             pkgNames += modelSources.stream().collect(Collectors.joining("\n"));
         }
-        trgMfs.write( MODEL_FILE, pkgNames.getBytes() );
+        trgMfs.write(getModelFileWithGAV(releaseId), pkgNames.getBytes());
     }
 
     public static class Result {
+
         private final List<String> sourceFiles;
         private final List<String> modelFiles;
 
-        public Result( List<String> sourceFiles, List<String> modelFiles ) {
+        public Result(List<String> sourceFiles, List<String> modelFiles) {
             this.sourceFiles = sourceFiles;
             this.modelFiles = modelFiles;
-        }
-
-        public String[] getSources() {
-            return sourceFiles.toArray( new String[sourceFiles.size()] );
         }
 
         public List<String> getSourceFiles() {

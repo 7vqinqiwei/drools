@@ -1,5 +1,23 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ *
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.drools.model.patterns;
 
+import java.util.Arrays;
 import java.util.Collection;
 
 import org.drools.model.AccumulatePattern;
@@ -39,10 +57,17 @@ public class AccumulatePatternImpl<T> extends AbstractSinglePattern implements A
         }
 
         final Argument source = accumulateFunctions[0].getSource();
+        if (source == null) {
+            return null;
+        }
 
         for (Condition subCondition : condition.getSubConditions()) {
             if (subCondition instanceof PatternImpl) {
                 PatternImpl patternImpl = (PatternImpl) subCondition;
+
+                if ( source.equals( patternImpl.getPatternVariable() ) ) {
+                    return patternImpl;
+                }
 
                 boolean isSource =  patternImpl
                         .getBindings()
@@ -125,5 +150,13 @@ public class AccumulatePatternImpl<T> extends AbstractSinglePattern implements A
         if ( !ModelComponent.areEqualInModel( pattern, that.pattern ) ) return false;
         if ( !ModelComponent.areEqualInModel(accumulateFunctions, that.accumulateFunctions) ) return false;
         return ModelComponent.areEqualInModel( boundVariables, that.boundVariables );
+    }
+
+    @Override
+    public String toString() {
+        return "AccumulatePatternImpl (" +
+                "functions: " + Arrays.toString(accumulateFunctions) + ", " +
+                "condition: " + condition + ", " +
+                "pattern: " + pattern + ")";
     }
 }

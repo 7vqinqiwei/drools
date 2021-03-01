@@ -1,23 +1,20 @@
-package org.kie.dmn.core.compiler.profiles;
+/*
+ * Copyright 2017 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-import org.hamcrest.Matchers;
-import org.junit.Assert;
-import org.junit.Test;
-import org.kie.dmn.feel.runtime.functions.FEELFnResult;
-import org.kie.dmn.feel.runtime.functions.extended.AbsFunction;
-import org.kie.dmn.feel.runtime.functions.extended.DateFunction;
-import org.kie.dmn.feel.runtime.functions.extended.EvenFunction;
-import org.kie.dmn.feel.runtime.functions.extended.ExpFunction;
-import org.kie.dmn.feel.runtime.functions.extended.LogFunction;
-import org.kie.dmn.feel.runtime.functions.extended.MedianFunction;
-import org.kie.dmn.feel.runtime.functions.extended.ModeFunction;
-import org.kie.dmn.feel.runtime.functions.extended.ModuloFunction;
-import org.kie.dmn.feel.runtime.functions.extended.OddFunction;
-import org.kie.dmn.feel.runtime.functions.extended.ProductFunction;
-import org.kie.dmn.feel.runtime.functions.extended.SplitFunction;
-import org.kie.dmn.feel.runtime.functions.extended.SqrtFunction;
-import org.kie.dmn.feel.runtime.functions.extended.StddevFunction;
-import org.kie.dmn.feel.runtime.functions.extended.TimeFunction;
+package org.kie.dmn.core.compiler.profiles;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -27,8 +24,27 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Collections;
 
+import org.hamcrest.Matchers;
+import org.junit.Assert;
+import org.junit.Test;
+import org.kie.dmn.feel.runtime.functions.AbsFunction;
+import org.kie.dmn.feel.runtime.functions.EvenFunction;
+import org.kie.dmn.feel.runtime.functions.ExpFunction;
+import org.kie.dmn.feel.runtime.functions.FEELFnResult;
+import org.kie.dmn.feel.runtime.functions.LogFunction;
+import org.kie.dmn.feel.runtime.functions.MedianFunction;
+import org.kie.dmn.feel.runtime.functions.ModeFunction;
+import org.kie.dmn.feel.runtime.functions.ModuloFunction;
+import org.kie.dmn.feel.runtime.functions.OddFunction;
+import org.kie.dmn.feel.runtime.functions.ProductFunction;
+import org.kie.dmn.feel.runtime.functions.SplitFunction;
+import org.kie.dmn.feel.runtime.functions.SqrtFunction;
+import org.kie.dmn.feel.runtime.functions.StddevFunction;
+import org.kie.dmn.feel.runtime.functions.extended.DateFunction;
+import org.kie.dmn.feel.runtime.functions.extended.TimeFunction;
+
 import static java.math.BigDecimal.valueOf;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 public class ExtendedDMNProfileTest {
@@ -100,12 +116,6 @@ public class ExtendedDMNProfileTest {
         assertResult(modeFunction.invoke(new Object[]{6, 3, 9, 6, 6}), Collections.singletonList(valueOf(6)));
         assertResult(modeFunction.invoke(Arrays.asList(6, 1, 9, 6, 1)), Arrays.asList(valueOf(1), valueOf(6)));
         assertResult(modeFunction.invoke(Collections.emptyList()), Collections.emptyList());
-    }
-
-    @Test
-    public void testAbsFunction() {
-        assertResult(absFunction.invoke(valueOf(10)), valueOf(10));
-        assertResult(absFunction.invoke(valueOf(-10)), valueOf(10));
     }
 
     @Test

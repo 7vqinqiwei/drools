@@ -31,8 +31,6 @@ import org.drools.core.util.index.TupleList;
  * Partial matches are propagated through the Rete network as <code>Tuple</code>s. Each <code>Tuple</code>
  * Is able to return the <code>FactHandleImpl</code> members of the partial match for the requested pattern.
  * The pattern refers to the index position of the <code>FactHandleImpl</code> in the underlying implementation.
- * 
- * @see org.drools.core.marshalling.impl.ProtobufMessages.FactHandle
  */
 public interface Tuple extends Serializable, Entry<Tuple> {
 
@@ -114,6 +112,10 @@ public interface Tuple extends Serializable, Entry<Tuple> {
     short getStagedType();
     void setStagedType(short stagedType);
 
+    default boolean isDeleted() {
+        return getStagedType() == DELETE || getStagedType() == NORMALIZED_DELETE;
+    }
+
     Tuple getStagedPrevious();
     void setStagedPrevious( Tuple stagePrevious );
 
@@ -161,5 +163,16 @@ public interface Tuple extends Serializable, Entry<Tuple> {
     <N extends NetworkNode> N getTupleSource();
 
     boolean isExpired();
-    void setExpired( boolean expired );
+
+    default PropagationContext findMostRecentPropagationContext() {
+        // Find the most recent PropagationContext, as this caused this rule to elegible for firing
+        PropagationContext mostRecentContext = getPropagationContext();
+        for ( Tuple lt = getParent(); lt != null; lt = lt.getParent() ) {
+            PropagationContext currentContext = lt.getPropagationContext();
+            if ( currentContext != null && currentContext.getPropagationNumber() > mostRecentContext.getPropagationNumber() ) {
+                mostRecentContext = currentContext;
+            }
+        }
+        return mostRecentContext;
+    }
 }

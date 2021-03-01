@@ -10,7 +10,6 @@ grammar FEEL_1_1;
 
 @parser::header {
     import org.kie.dmn.feel.parser.feel11.ParserHelper;
-    import org.kie.dmn.feel.parser.feel11.Keywords;
 }
 
 @parser::members {
@@ -22,10 +21,6 @@ grammar FEEL_1_1;
 
     public ParserHelper getHelper() {
         return helper;
-    }
-
-    private boolean isKeyword( Keywords k ) {
-        return k.symbol.equals( _input.LT(1).getText() );
     }
 
     private String getOriginalText( ParserRuleContext ctx ) {
@@ -114,7 +109,17 @@ quantifiedExpression
 
 // #54
 type
-    : ( FUNCTION | qualifiedName )
+@init {
+    helper.pushTypeScope();
+}
+@after {
+    helper.popScope();
+}
+    : sk=Identifier {$sk.getText().equals("list");} LT type GT                                                        #listType
+    | sk=Identifier {$sk.getText().equals("context");} LT Identifier COLON type ( COMMA Identifier COLON type )* GT   #contextType
+    | FUNCTION                                                                                                        #qnType
+    | FUNCTION LT type ( COMMA type )* GT RARROW type                                                                 #functionType
+    | qualifiedName                                                                                                   #qnType
     ;
 
 // #56
@@ -174,6 +179,10 @@ key
 
 nameDefinition
     : nameDefinitionTokens { helper.defineVariable( $nameDefinitionTokens.ctx ); }
+    ;
+    
+nameDefinitionWithEOF
+    : nameDefinition EOF
     ;
 
 nameDefinitionTokens
@@ -262,10 +271,11 @@ filterPathExpression
     ;
 
 unaryExpression
-	:	SUB unaryExpression                      #signedUnaryExpressionMinus
+	:	unaryExpression parameters               #fnInvocation
+    |	SUB unaryExpression                      #signedUnaryExpressionMinus
 	|   unaryExpressionNotPlusMinus              #nonSignedUnaryExpression
     |	ADD unaryExpressionNotPlusMinus          #signedUnaryExpressionPlus
-	;
+  	;
 
 unaryExpressionNotPlusMinus
 	: primary (DOT {helper.recoverScope();helper.enableDynamicResolution();} qualifiedName parameters? {helper.disableDynamicResolution();helper.dismissScope();} )?   #uenpmPrimary
@@ -281,7 +291,7 @@ primary
     | context                     #primaryContext
     | LPAREN expression RPAREN          #primaryParens
     | simplePositiveUnaryTest     #primaryUnaryTest
-    | qualifiedName parameters?   #primaryName
+    | qualifiedName    #primaryName
     ;
 
 // #33 - #39
@@ -289,8 +299,17 @@ literal
     :	IntegerLiteral          #numberLiteral
     |	FloatingPointLiteral    #numberLiteral
     |	BooleanLiteral          #boolLiteral
+    |   atLiteral               #atLiteralLabel
     |	StringLiteral           #stringLiteral
     |	NULL                #nullLiteral
+    ;
+    
+atLiteral
+    : AT atLiteralValue
+    ;
+    
+atLiteralValue 
+    : StringLiteral 
     ;
 
 BooleanLiteral
@@ -304,10 +323,10 @@ BooleanLiteral
 
 // #7
 simplePositiveUnaryTest
-    : op=LT  {helper.enableDynamicResolution();}  endpoint {helper.disableDynamicResolution();}   #positiveUnaryTestIneq
-    | op=GT  {helper.enableDynamicResolution();}  endpoint {helper.disableDynamicResolution();}   #positiveUnaryTestIneq
-    | op=LE {helper.enableDynamicResolution();}  endpoint {helper.disableDynamicResolution();}   #positiveUnaryTestIneq
-    | op=GE {helper.enableDynamicResolution();}  endpoint {helper.disableDynamicResolution();}   #positiveUnaryTestIneq
+    : op=LT  {helper.enableDynamicResolution();}  endpoint {helper.disableDynamicResolution();}   #positiveUnaryTestIneqInterval
+    | op=GT  {helper.enableDynamicResolution();}  endpoint {helper.disableDynamicResolution();}   #positiveUnaryTestIneqInterval
+    | op=LE {helper.enableDynamicResolution();}  endpoint {helper.disableDynamicResolution();}   #positiveUnaryTestIneqInterval
+    | op=GE {helper.enableDynamicResolution();}  endpoint {helper.disableDynamicResolution();}   #positiveUnaryTestIneqInterval
     | op=EQUAL  {helper.enableDynamicResolution();}  endpoint {helper.disableDynamicResolution();}   #positiveUnaryTestIneq
     | op=NOTEQUAL {helper.enableDynamicResolution();}  endpoint {helper.disableDynamicResolution();}   #positiveUnaryTestIneq
     | interval           #positiveUnaryTestInterval
@@ -395,7 +414,7 @@ nameRef
 
 nameRefOtherToken
     : { helper.followUp( _input.LT(1), _localctx==null ) }?
-        ~(LPAREN|RPAREN|LBRACK|RBRACK|LBRACE|RBRACE|LT|GT|EQUAL|BANG|DIV|MUL|COMMA)
+        ~(LPAREN|RPAREN|LBRACK|RBRACK|LBRACE|RBRACE|LT|GT|EQUAL|BANG|COMMA)
     ;
 
 /********************************
@@ -693,7 +712,8 @@ ZeroToThree
 // This is not in the spec but prevents having to preprocess the input
 fragment
 UnicodeEscape
-    :   '\\' 'u' HexDigit HexDigit HexDigit HexDigit
+    :   '\\' 'U' HexDigit HexDigit HexDigit HexDigit HexDigit HexDigit
+    |   '\\' 'u' HexDigit HexDigit HexDigit HexDigit
     ;
 
 // The Null Literal
@@ -721,6 +741,8 @@ NOTEQUAL : '!=';
 
 COLON : ':';
 
+RARROW : '->';
+
 POW : '**';
 ADD : '+';
 SUB : '-';
@@ -734,32 +756,24 @@ NOT
     : 'not'
     ;
 
+AT  : '@';
 
 Identifier
-	:	JavaLetter JavaLetterOrDigit*
-	;
+    : NameStartChar NameStartCharOrPart*
+    ;
 
 fragment
-JavaLetter
-	:	[a-zA-Z$_] // these are the "java letters" below 0x7F
-	|   '?'
-	|	// covers all characters above 0x7F which are not a surrogate
-		~[\u0000-\u007F\uD800-\uDBFF]
-		{Character.isJavaIdentifierStart(_input.LA(-1))}?
-	|	// covers UTF-16 surrogate pairs encodings for U+10000 to U+10FFFF
-		[\uD800-\uDBFF] [\uDC00-\uDFFF]
-		{Character.isJavaIdentifierStart(Character.toCodePoint((char)_input.LA(-2), (char)_input.LA(-1)))}?
-	;
+NameStartChar
+    : '?' | [A-Z] | '_' | [a-z] | [\u00C0-\u00D6] | [\u00D8-\u00F6] | [\u00F8-\u02FF] | [\u0370-\u037D] | [\u037F-\u1FFF] |
+    [\u200C-\u200D] | [\u2070-\u218F] | [\u2C00-\u2FEF] | [\u3001-\uD7FF] | [\uF900-\uFDCF] | [\uFDF0-\uFFFD] | 
+    [\u{10000}-\u{EFFFF}];
 
 fragment
-JavaLetterOrDigit
-	:	[a-zA-Z0-9$_] // these are the "java letters or digits" below 0x7F
-	|	// covers all characters above 0x7F which are not a surrogate
-		~[\u0000-\u007F\uD800-\uDBFF]
-		{Character.isJavaIdentifierPart(_input.LA(-1))}?
-	|	// covers UTF-16 surrogate pairs encodings for U+10000 to U+10FFFF
-		[\uD800-\uDBFF] [\uDC00-\uDFFF]
-		{Character.isJavaIdentifierPart(Character.toCodePoint((char)_input.LA(-2), (char)_input.LA(-1)))}?
+NameStartCharOrPart
+    : '?' | [A-Z] | '_' | [a-z] | [\u00C0-\u00D6] | [\u00D8-\u00F6] | [\u00F8-\u02FF] | [\u0370-\u037D] | [\u037F-\u1FFF] |
+    [\u200C-\u200D] | [\u2070-\u218F] | [\u2C00-\u2FEF] | [\u3001-\uD7FF] | [\uF900-\uFDCF] | [\uFDF0-\uFFFD] | 
+    [\u{10000}-\u{EFFFF}]
+    | [0-9] | '\u00B7' | [\u0300-\u036F] | [\u203F-\u2040]
 	;
 
 //

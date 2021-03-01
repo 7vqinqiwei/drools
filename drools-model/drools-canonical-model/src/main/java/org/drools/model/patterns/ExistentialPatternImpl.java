@@ -75,4 +75,16 @@ public class ExistentialPatternImpl implements Condition, ModelComponent {
 
         return type == that.type && ModelComponent.areEqualInModel( condition, that.condition );
     }
+
+    @Override
+    public String toString() {
+        return "ExistentialPatternImpl (" +
+                "type: " + type + ", " +
+                "condition: " + condition + ")";
+    }
+
+    @Override
+    public Condition cloneCondition() {
+        return new ExistentialPatternImpl( condition.cloneCondition(), type );
+    }
 }

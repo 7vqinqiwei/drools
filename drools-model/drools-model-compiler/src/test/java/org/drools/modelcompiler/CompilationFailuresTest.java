@@ -17,10 +17,12 @@
 package org.drools.modelcompiler;
 
 import org.drools.modelcompiler.domain.Person;
+import org.drools.modelcompiler.domain.Result;
 import org.junit.Test;
 import org.kie.api.builder.Message;
 import org.kie.api.builder.Results;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 public class CompilationFailuresTest extends BaseModelTest {
@@ -42,6 +44,9 @@ public class CompilationFailuresTest extends BaseModelTest {
 
         Results results = getCompilationResults(drl);
         assertFalse(results.getMessages( Message.Level.ERROR).isEmpty());
+
+        // line = -1 even with STANDARD_FROM_DRL (PredicateDescr)
+        assertEquals(-1, results.getMessages().get(0).getLine());
     }
 
     @Test
@@ -55,6 +60,8 @@ public class CompilationFailuresTest extends BaseModelTest {
 
         Results results = getCompilationResults(drl);
         assertFalse(results.getMessages( Message.Level.ERROR).isEmpty());
+
+        assertEquals(3, results.getMessages().get(0).getLine());
     }
 
     private Results getCompilationResults( String drl ) {
@@ -96,6 +103,66 @@ public class CompilationFailuresTest extends BaseModelTest {
 
         Results results = getCompilationResults(drl);
         assertFalse(results.getMessages( Message.Level.ERROR).isEmpty());
+
+        // line = -1 even with STANDARD_FROM_DRL (PredicateDescr)
+        assertEquals(-1, results.getMessages().get(0).getLine());
     }
 
+    @Test
+    public void testMaxIntegerResultOnDoublePatternShouldntCompile() {
+        checkCompilationFailureOnMismatchingAccumulate("Integer", "max");
+    }
+
+    @Test
+    public void testMinIntegerResultOnDoublePatternShouldntCompile() {
+        checkCompilationFailureOnMismatchingAccumulate("Integer", "min");
+    }
+
+    @Test
+    public void testMaxLongResultOnDoublePatternShouldntCompile() {
+        checkCompilationFailureOnMismatchingAccumulate("Long", "max");
+    }
+
+    @Test
+    public void testMinLongResultOnDoublePatternShouldntCompile() {
+        checkCompilationFailureOnMismatchingAccumulate("Long", "min");
+    }
+
+    private void checkCompilationFailureOnMismatchingAccumulate(String type, String accFunc) {
+        String drl =
+                "import " + Person.class.getCanonicalName() + ";" +
+                "import " + Result.class.getCanonicalName() + ";" +
+                "rule X when\n" +
+                "  $max : Double() from accumulate ( $num : " + type + "(); " + accFunc + "($num) ) \n" +
+                "then\n" +
+                "  Double res = null;" +
+                "  res = $max;\n" +
+                "  System.out.println($max);\n" +
+                "end";
+
+        Results results = getCompilationResults(drl);
+        assertFalse(results.getMessages( Message.Level.ERROR).isEmpty());
+
+        // line = 1 with STANDARD_FROM_DRL (RuleDescr)
+        assertEquals(1, results.getMessages().get(0).getLine());
+    }
+
+
+    @Test
+    public void testModifyOnFactInScope() {
+        // DROOLS-5242
+        String drl =
+                "import " + Person.class.getCanonicalName() + ";" +
+                "rule R1 when\n" +
+                "  $p : Person(name == \"Mario\")\n" +
+                "then\n" +
+                "  modify($p) { $p.setName(\"Mark\") }\n" +
+                "end";
+
+        Results results = getCompilationResults(drl);
+        assertFalse(results.getMessages( Message.Level.ERROR).isEmpty());
+
+        // RHS error : line = 1 with STANDARD_FROM_DRL (RuleDescr)
+        assertEquals(1, results.getMessages().get(0).getLine());
+    }
 }

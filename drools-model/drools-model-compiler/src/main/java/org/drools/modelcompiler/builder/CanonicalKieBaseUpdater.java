@@ -23,16 +23,17 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.drools.compiler.builder.InternalKnowledgeBuilder;
 import org.drools.compiler.builder.impl.CompositeKnowledgeBuilderImpl;
-import org.drools.compiler.builder.impl.KnowledgeBuilderImpl;
-import org.drools.compiler.kie.builder.impl.KieBaseUpdateContext;
-import org.drools.compiler.kie.builder.impl.KieBaseUpdater;
+import org.drools.compiler.kie.builder.impl.KieBaseUpdaterImplContext;
+import org.drools.compiler.kie.builder.impl.KieBaseUpdaterImpl;
 import org.drools.compiler.kie.builder.impl.KieBuilderImpl;
 import org.drools.compiler.kproject.models.KieBaseModelImpl;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.definitions.InternalKnowledgePackage;
 import org.drools.core.definitions.impl.KnowledgePackageImpl;
 import org.drools.core.definitions.rule.impl.RuleImpl;
+import org.drools.core.rule.Function;
 import org.drools.core.rule.TypeDeclaration;
 import org.drools.modelcompiler.CanonicalKieModule;
 import org.drools.modelcompiler.CanonicalKiePackages;
@@ -41,14 +42,12 @@ import org.kie.api.definition.KiePackage;
 import org.kie.api.definition.rule.Rule;
 import org.kie.internal.builder.ChangeType;
 import org.kie.internal.builder.CompositeKnowledgeBuilder;
-import org.kie.internal.builder.KnowledgeBuilder;
-import org.kie.internal.builder.KnowledgeBuilderFactory;
 import org.kie.internal.builder.ResourceChange;
 import org.kie.internal.builder.ResourceChangeSet;
 
-public class CanonicalKieBaseUpdater extends KieBaseUpdater {
+public class CanonicalKieBaseUpdater extends KieBaseUpdaterImpl {
 
-    public CanonicalKieBaseUpdater( KieBaseUpdateContext ctx ) {
+    public CanonicalKieBaseUpdater( KieBaseUpdaterImplContext ctx ) {
         super(ctx);
     }
 
@@ -57,25 +56,24 @@ public class CanonicalKieBaseUpdater extends KieBaseUpdater {
         CanonicalKieModule oldKM = ( CanonicalKieModule ) ctx.currentKM;
         CanonicalKieModule newKM = ( CanonicalKieModule ) ctx.newKM;
 
-        newKM.setModuleClassLoader( (( CanonicalKieModule ) ctx.currentKM).getModuleClassLoader() );
-        CanonicalKiePackages newPkgs = newKM.getKiePackages( ctx.newKieBaseModel );
-
         List<RuleImpl> rulesToBeRemoved;
         List<RuleImpl> rulesToBeAdded;
 
         Map<String, AtomicInteger> globalsCounter = new HashMap<>();
 
-
-        KnowledgeBuilder kbuilder = KnowledgeBuilderFactory.newKnowledgeBuilder(ctx.kBase, ctx.newKM.getBuilderConfiguration(ctx.newKieBaseModel, ctx.kBase.getRootClassLoader() ) );
-        KnowledgeBuilderImpl pkgbuilder = (KnowledgeBuilderImpl)kbuilder;
-        CompositeKnowledgeBuilder ckbuilder = kbuilder.batch();
+        // To keep compatible the classes generated from declared types the new kmodule has to be loaded with the classloader of the old one
+        newKM.setIncrementalUpdate( true );
+        CanonicalKiePackages newPkgs = newKM.getKiePackages( ctx.newKieBaseModel );
+        InternalKnowledgeBuilder pkgbuilder = ctx.kbuilder;
+        CompositeKnowledgeBuilder ckbuilder = pkgbuilder.batch();
+        newKM.setIncrementalUpdate( false );
 
         removeResources(pkgbuilder);
 
         if (ctx.modifyingUsedClass) {
             // remove all ObjectTypeNodes for the modified classes
             for (Class<?> cls : ctx.modifiedClasses ) {
-                clearInstancesOfModifiedClass( cls );
+                clearInstancesOfModifiedClass(cls);
             }
 
             for (InternalKnowledgePackage kpkg : ctx.kBase.getPackagesMap().values()) {
@@ -143,6 +141,9 @@ public class CanonicalKieBaseUpdater extends KieBaseUpdater {
                             case DECLARATION:
                                 oldKpkg.removeTypeDeclaration( changedItemName );
                                 break;
+                            case FUNCTION:
+                                oldKpkg.removeFunction(changedItemName);
+                                break;
                             default:
                                 throw new IllegalArgumentException("Unsupported change type: " + change.getType() + "!");
                         }
@@ -150,14 +151,10 @@ public class CanonicalKieBaseUpdater extends KieBaseUpdater {
                     if (kpkg != null && (change.getChangeType() == ChangeType.UPDATED || change.getChangeType() == ChangeType.ADDED)) {
                         switch (change.getType()) {
                             case GLOBAL:
-                                try {
-                                    globalsCounter.computeIfAbsent( changedItemName, name -> ctx.kBase.getGlobals().get(name) == null ? new AtomicInteger( 1 ) : new AtomicInteger( 0 ) ).incrementAndGet();
-                                    Class<?> globalClass = kpkg.getTypeResolver().resolveType( kpkg.getGlobals().get(changedItemName) );
-                                    oldKpkg.addGlobal( changedItemName, globalClass );
-                                    ctx.kBase.addGlobal( changedItemName, globalClass );
-                                } catch (ClassNotFoundException e) {
-                                    throw new RuntimeException( e );
-                                }
+                                globalsCounter.computeIfAbsent( changedItemName, name -> ctx.kBase.getGlobals().get(name) == null ? new AtomicInteger( 1 ) : new AtomicInteger( 0 ) ).incrementAndGet();
+                                Class<?> globalClass = kpkg.getGlobals().get(changedItemName);
+                                oldKpkg.addGlobal( changedItemName, globalClass );
+                                ctx.kBase.addGlobal( changedItemName, globalClass );
                                 break;
                             case RULE:
                                 RuleImpl addedRule = kpkg.getRule( changedItemName );
@@ -167,6 +164,10 @@ public class CanonicalKieBaseUpdater extends KieBaseUpdater {
                             case DECLARATION:
                                 TypeDeclaration addedType = kpkg.getTypeDeclaration( changedItemName );
                                 oldKpkg.addTypeDeclaration( addedType );
+                                break;
+                            case FUNCTION:
+                                Function addedFunction = kpkg.getFunctions().get(changedItemName);
+                                oldKpkg.addFunction(addedFunction);
                                 break;
                             default:
                                 throw new IllegalArgumentException("Unsupported change type: " + change.getType() + "!");

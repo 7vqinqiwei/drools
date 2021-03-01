@@ -25,7 +25,6 @@ import java.io.UnsupportedEncodingException;
 import java.io.Writer;
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -37,6 +36,9 @@ import javax.xml.bind.JAXBContext;
 import javax.xml.bind.JAXBException;
 import javax.xml.bind.Marshaller;
 import javax.xml.bind.Unmarshaller;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamReader;
 import javax.xml.validation.Schema;
 import javax.xml.validation.SchemaFactory;
 
@@ -78,10 +80,12 @@ import org.mvel2.templates.TemplateCompiler;
 import org.mvel2.templates.TemplateRegistry;
 import org.xml.sax.SAXException;
 
+import static org.drools.core.command.runtime.pmml.PmmlConstants.DEFAULT_ROOT_PACKAGE;
+
 public class PMML4Compiler {
 
-    public static final String PMML_NAMESPACE = "org.dmg.pmml.pmml_4_2";
-    public static final String PMML_DROOLS = "org.kie.pmml.pmml_4_2";
+    public static final String PMML_NAMESPACE = DEFAULT_ROOT_PACKAGE;
+    public static final String PMML_DROOLS = DEFAULT_ROOT_PACKAGE;
     public static final String PMML = PMML_NAMESPACE + ".descr";
     public static final String SCHEMA_PATH = "xsd/org/dmg/pmml/pmml_4_2/pmml-4-2.xsd";
     public static final String BASE_PACK = PMML_DROOLS.replace('.', '/');
@@ -346,7 +350,6 @@ public class PMML4Compiler {
     }
 
     private static KieBase checkBuildingResources(PMML pmml) throws IOException {
-
         KieServices ks = KieServices.Factory.get();
         KieContainer kieContainer = ks.getKieClasspathContainer(PMML4Compiler.class.getClassLoader());
 
@@ -507,26 +510,16 @@ public class PMML4Compiler {
         return is;
     }
 
-    
-    public Map<String, String> getJavaClasses(String fileName) {
-        InputStream is = getInputStreamByFileName(fileName);
-        if (is != null) {
-            return getJavaClasses(is);
-        }
-        return new HashMap<>();
-    }
-
-    
-    public Map<String, String> getJavaClasses(InputStream stream) {
+    public Map<String, String> getJavaClasses(PMML pmml) throws PMML4Exception {
         Map<String, String> javaClasses = new HashMap<>();
-        PMML pmml = loadModel(PMML, stream);
         if (pmml != null && results.isEmpty()) {
             PMML4Unit unit = new PMML4UnitImpl(pmml);
             if (unit != null) {
                 List<PMML4Model> models = unit.getModels();
-                models.forEach(model -> {
+                for (PMML4Model model : models) {
                     Map.Entry<String, String> inputPojo = model.getMappedMiningPojo();
                     Map.Entry<String, String> ruleUnit = model.getMappedRuleUnit();
+                    Map<String, String> outputs = model.getOutputTargetPojos();
                     Map.Entry<String, String> outcome = null;
                     if (model.getModelType() == PMML4ModelType.TREE) {
                         outcome = ((Treemodel) model).getTreeNodeJava();
@@ -540,18 +533,20 @@ public class PMML4Compiler {
                     if (outcome != null) {
                         javaClasses.put(outcome.getKey(), outcome.getValue());
                     }
-                });
+                    if (outputs != null) {
+                        javaClasses.putAll(outputs);
+                    }
+                }
             }
         }
         return javaClasses;
     }
 
-    public List<PMMLResource> precompile(InputStream stream, ClassLoader classLoader, KieBaseModel rootKieBaseModel) {
+    public List<PMMLResource> precompile(PMML pmml, ClassLoader classLoader) {
         List<PMMLResource> resources = new ArrayList<>();
         KieServices services = KieServices.Factory.get();
         KieModuleModel module = services.newKieModuleModel();
         this.results = new ArrayList<KnowledgeBuilderResult>();
-        PMML pmml = loadModel(PMML, stream);
         helper.setResolver(classLoader);
         PMML4Unit unit = new PMML4UnitImpl(pmml);
         if (unit.containsMiningModel()) {
@@ -747,10 +742,21 @@ public class PMML4Compiler {
             }
             final JAXBContext jc;
             final ClassLoader ccl = Thread.currentThread().getContextClassLoader();
+            XMLStreamReader reader = null;
             try {
                 Thread.currentThread().setContextClassLoader(PMML4Compiler.class.getClassLoader());
-                jc = JAXBContext.newInstance(model, PMML4Compiler.class.getClassLoader());
-            } finally {
+
+                // Workaround: in Java 9+ Maven does not load the package-info class during plugin execution
+                // see https://hibernate.atlassian.net/browse/HHH-12893
+                PMML4Compiler.class.getClassLoader().loadClass("org.dmg.pmml.pmml_4_2.descr.package-info");
+
+                Class c = PMML4Compiler.class.getClassLoader().loadClass("org.dmg.pmml.pmml_4_2.descr.PMML");
+                jc = JAXBContext.newInstance(c);
+                XMLInputFactory xif = XMLInputFactory.newFactory();
+                xif.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+                xif.setProperty(XMLInputFactory.SUPPORT_DTD, true);
+                reader = xif.createXMLStreamReader(source);
+			} finally {
                 Thread.currentThread().setContextClassLoader(ccl);
             }
             Unmarshaller unmarshaller = jc.createUnmarshaller();
@@ -758,8 +764,13 @@ public class PMML4Compiler {
                 unmarshaller.setSchema(schema);
             }
 
-            return (PMML) unmarshaller.unmarshal(source);
-        } catch (JAXBException e) {
+            if (reader != null) {
+                return (PMML) unmarshaller.unmarshal(reader);
+            } else {
+            	this.results.add(new PMMLError("Unknown error in PMML"));
+            	return null;
+            }
+        } catch (ClassNotFoundException | XMLStreamException | JAXBException e) {
             this.results.add(new PMMLError(e.toString()));
             return null;
         }

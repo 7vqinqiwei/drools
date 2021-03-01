@@ -1,3 +1,19 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *       http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.kie.dmn.core.compiler;
 
 import java.util.ArrayList;
@@ -9,9 +25,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 
+import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import org.antlr.v4.runtime.CommonToken;
-import org.drools.javaparser.ast.CompilationUnit;
-import org.drools.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import org.kie.dmn.api.core.DMNContext;
 import org.kie.dmn.api.core.DMNMessage;
 import org.kie.dmn.api.core.DMNType;
@@ -32,6 +48,7 @@ import org.kie.dmn.feel.lang.impl.FEELEventListenersManager;
 import org.kie.dmn.feel.lang.impl.FEELImpl;
 import org.kie.dmn.feel.runtime.FEELFunction;
 import org.kie.dmn.feel.runtime.UnaryTest;
+import org.kie.dmn.feel.runtime.events.ASTHeuristicCheckEvent;
 import org.kie.dmn.feel.runtime.events.SyntaxErrorEvent;
 import org.kie.dmn.feel.runtime.events.UnknownVariableErrorEvent;
 import org.kie.dmn.feel.util.ClassLoaderUtil;
@@ -117,6 +134,7 @@ public class DMNFEELHelper {
         for ( Map.Entry<String, DMNType> entry : ctx.getVariables().entrySet() ) {
             feelctx.addInputVariableType( entry.getKey(), ((BaseDMNTypeImpl) entry.getValue()).getFeelType() );
         }
+        feelctx.setFEELTypeRegistry(model.getTypeRegistry());
         CompiledExpression ce = feel.compile( expression, feelctx );
         processEvents( model, element, errorMsg, msgParams );
         return ce;
@@ -164,11 +182,12 @@ public class DMNFEELHelper {
         while ( !feelEvents.isEmpty() ) {
             FEELEvent event = feelEvents.remove();
             if ( !isDuplicateEvent( model, msg, element ) ) {
-                if ( event instanceof SyntaxErrorEvent || event.getSeverity() == FEELEvent.Severity.ERROR ) {
+                if (event instanceof SyntaxErrorEvent || event instanceof ASTHeuristicCheckEvent || event.getSeverity() == FEELEvent.Severity.ERROR) {
+                    DMNMessage.Severity severity = event instanceof ASTHeuristicCheckEvent ? DMNMessage.Severity.WARN : DMNMessage.Severity.ERROR;
                     if ( msg instanceof Msg.Message2 ) {
                         MsgUtil.reportMessage(
                                 logger,
-                                DMNMessage.Severity.ERROR,
+                                severity,
                                 element,
                                 model,
                                 null,
@@ -185,7 +204,7 @@ public class DMNFEELHelper {
                         }
                         MsgUtil.reportMessage(
                                 logger,
-                                DMNMessage.Severity.ERROR,
+                                severity,
                                 element,
                                 model,
                                 null,
@@ -196,7 +215,9 @@ public class DMNFEELHelper {
                                 message3 );
                     } else if ( msg instanceof Msg.Message4 ) {
                         String message = null;
-                        if( event.getOffendingSymbol() == null ) {
+                        if (event instanceof ASTHeuristicCheckEvent) {
+                            message = event.getMessage();
+                        } else if (event.getOffendingSymbol() == null) {
                             message = "";
                         } else if( event instanceof UnknownVariableErrorEvent ) {
                             message = event.getMessage();
@@ -207,7 +228,7 @@ public class DMNFEELHelper {
                         }
                         MsgUtil.reportMessage(
                                 logger,
-                                DMNMessage.Severity.ERROR,
+                                severity,
                                 element,
                                 model,
                                 null,
@@ -225,13 +246,11 @@ public class DMNFEELHelper {
 
     private boolean isDuplicateEvent(DMNModelImpl model, Msg.Message error, DMNElement element) {
         return model.getMessages().stream().anyMatch( msg -> msg.getMessageType() == error.getType() &&
-                                                             (msg.getSourceId() == element.getId() ||
-                                                              (msg.getSourceId() != null &&
-                                                               element.getId() != null &&
-                                                               msg.getSourceId().equals( element.getId() ))) );
+                                                             (msg.getSourceId() == null && element.getId() == null
+                                                                     || (msg.getSourceId() != null && element.getId() != null && msg.getSourceId().equals(element.getId()))) );
     }
 
-    public ClassOrInterfaceDeclaration generateUnaryTestsSource(String unaryTests, DMNCompilerContext ctx, Type inputColumnType) {
+    public ClassOrInterfaceDeclaration generateUnaryTestsSource(String unaryTests, DMNCompilerContext ctx, Type inputColumnType, boolean isStatic) {
         CompilerContext compilerContext =
                 ctx.toCompilerContext()
                         .addInputVariableType("?", inputColumnType);
@@ -240,7 +259,11 @@ public class DMNFEELHelper {
         CompilationUnit compilationUnit = compiledUnaryTest.getSourceCode().clone();
         return compilationUnit.getType(0)
                 .asClassOrInterfaceDeclaration()
-                .setStatic(true);
+                .setStatic(isStatic);
+    }
+
+    public ClassOrInterfaceDeclaration generateStaticUnaryTestsSource(String unaryTests, DMNCompilerContext ctx, Type inputColumnType) {
+        return generateUnaryTestsSource(unaryTests, ctx, inputColumnType, true);
     }
 
     public static class FEELEventsListenerImpl implements FEELEventListener {
@@ -268,6 +291,7 @@ public class DMNFEELHelper {
         return feel.newCompilerContext();
     }
 
+    @Deprecated
     public CompiledExpression compile( DMNModelImpl model, DMNElement element, Msg.Message msg, String dtableName, String expr, CompilerContext feelctx, int index ) {
         CompiledExpression compiled = feel.compile( expr, feelctx );
         processEvents( model, element, msg, expr, dtableName, index );

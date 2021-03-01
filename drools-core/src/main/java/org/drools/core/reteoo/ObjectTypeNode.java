@@ -28,10 +28,9 @@ import org.drools.core.InitialFact;
 import org.drools.core.RuleBaseConfiguration;
 import org.drools.core.base.ClassObjectType;
 import org.drools.core.base.ValueType;
-import org.drools.core.common.ClassAwareObjectStore;
 import org.drools.core.common.DefaultFactHandle;
 import org.drools.core.common.DroolsObjectInputStream;
-import org.drools.core.common.EventFactHandle;
+import org.drools.core.common.FactHandleClassStore;
 import org.drools.core.common.InternalFactHandle;
 import org.drools.core.common.InternalWorkingMemory;
 import org.drools.core.common.Memory;
@@ -39,25 +38,13 @@ import org.drools.core.common.MemoryFactory;
 import org.drools.core.common.RuleBasePartitionId;
 import org.drools.core.common.UpdateContext;
 import org.drools.core.impl.StatefulKnowledgeSessionImpl.WorkingMemoryReteExpireAction;
-import org.drools.core.marshalling.impl.MarshallerReaderContext;
-import org.drools.core.marshalling.impl.MarshallerWriteContext;
-import org.drools.core.marshalling.impl.PersisterEnums;
-import org.drools.core.marshalling.impl.ProtobufMessages;
-import org.drools.core.marshalling.impl.ProtobufMessages.Timers.ExpireTimer;
-import org.drools.core.marshalling.impl.ProtobufMessages.Timers.Timer;
-import org.drools.core.marshalling.impl.TimersInputMarshaller;
-import org.drools.core.marshalling.impl.TimersOutputMarshaller;
 import org.drools.core.reteoo.builder.BuildContext;
-import org.drools.core.reteoo.compiled.CompiledNetwork;
 import org.drools.core.rule.EntryPointId;
 import org.drools.core.spi.ObjectType;
 import org.drools.core.spi.PropagationContext;
 import org.drools.core.time.Job;
 import org.drools.core.time.JobContext;
 import org.drools.core.time.JobHandle;
-import org.drools.core.time.TimerService;
-import org.drools.core.time.impl.DefaultJobHandle;
-import org.drools.core.time.impl.PointInTimeTrigger;
 import org.drools.core.util.bitmask.BitMask;
 import org.drools.core.util.bitmask.EmptyBitMask;
 
@@ -95,13 +82,9 @@ public class ObjectTypeNode extends ObjectSource
 
     private boolean objectMemoryEnabled;
 
-    private static final transient ExpireJob job = new ExpireJob();
-
     private long                            expirationOffset = -1;
 
     private boolean queryNode;
-
-    protected CompiledNetwork compiledNetwork;
 
     /* always dirty after serialisation */
     private transient volatile boolean dirty;
@@ -132,7 +115,8 @@ public class ObjectTypeNode extends ObjectSource
               RuleBasePartitionId.MAIN_PARTITION,
               context.getKnowledgeBase().getConfiguration().isMultithreadEvaluation(),
               source,
-              context.getKnowledgeBase().getConfiguration().getAlphaNodeHashingThreshold());
+              context.getKnowledgeBase().getConfiguration().getAlphaNodeHashingThreshold(),
+              context.getKnowledgeBase().getConfiguration().getAlphaNodeRangeIndexThreshold());
         this.objectType = objectType;
         idGenerator = new IdGenerator(id);
 
@@ -190,7 +174,7 @@ public class ObjectTypeNode extends ObjectSource
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
-            if (o == null || !(o instanceof Id)) return false;
+            if (!(o instanceof Id)) return false;
 
             Id otherId = (Id) o;
             return id == otherId.id && otnId == otherId.otnId;
@@ -210,6 +194,7 @@ public class ObjectTypeNode extends ObjectSource
         }
     }
 
+    @Override
     public void readExternal(ObjectInput in) throws IOException,
                                                     ClassNotFoundException {
         super.readExternal(in);
@@ -228,6 +213,7 @@ public class ObjectTypeNode extends ObjectSource
         idGenerator = new IdGenerator(id);
     }
 
+    @Override
     public void writeExternal(ObjectOutput out) throws IOException {
         super.writeExternal(out);
         out.writeObject(objectType);
@@ -236,6 +222,7 @@ public class ObjectTypeNode extends ObjectSource
         out.writeBoolean(queryNode);
     }
 
+    @Override
     public short getType() {
         return NodeTypeEnums.ObjectTypeNode;
     }
@@ -252,6 +239,7 @@ public class ObjectTypeNode extends ObjectSource
     /**
      * Returns the partition ID for which this node belongs to
      */
+    @Override
     public RuleBasePartitionId getPartitionId() {
         return RuleBasePartitionId.MAIN_PARTITION;
     }
@@ -263,16 +251,6 @@ public class ObjectTypeNode extends ObjectSource
 
     public boolean isAssignableFrom(final ObjectType objectType) {
         return this.objectType.isAssignableFrom(objectType);
-    }
-
-    public CompiledNetwork getCompiledNetwork() {
-        return this.compiledNetwork;
-    }
-
-    public void setCompiledNetwork(CompiledNetwork compiledNetwork) {
-        this.compiledNetwork = compiledNetwork;
-
-        this.compiledNetwork.setObjectTypeNode(this);
     }
 
     public void assertInitialFact(final InternalFactHandle factHandle,
@@ -308,6 +286,7 @@ public class ObjectTypeNode extends ObjectSource
      * @param context       The propagation context.
      * @param workingMemory The working memory session.
      */
+    @Override
     public void assertObject(final InternalFactHandle factHandle,
                              final PropagationContext context,
                              final InternalWorkingMemory workingMemory) {
@@ -315,15 +294,9 @@ public class ObjectTypeNode extends ObjectSource
 
     public void propagateAssert(InternalFactHandle factHandle, PropagationContext context, InternalWorkingMemory workingMemory) {
         checkDirty();
-        if (compiledNetwork != null) {
-            compiledNetwork.assertObject(factHandle,
-                                         context,
-                                         workingMemory);
-        } else {
-            this.sink.propagateAssertObject(factHandle,
-                                            context,
-                                            workingMemory);
-        }
+        this.sink.propagateAssertObject(factHandle,
+                                        context,
+                                        workingMemory);
     }
 
     /**
@@ -361,7 +334,7 @@ public class ObjectTypeNode extends ObjectSource
 
     public static void expireLeftTuple(LeftTuple leftTuple) {
         if (!leftTuple.isExpired()) {
-            leftTuple.setExpired( true );
+            leftTuple.setExpired();
             for ( LeftTuple child = leftTuple.getFirstChild(); child != null; child = child.getHandleNext() ) {
                 expireLeftTuple(child);
             }
@@ -413,25 +386,20 @@ public class ObjectTypeNode extends ObjectSource
         idGenerator.reset();
     }
 
+    @Override
     public void modifyObject(InternalFactHandle factHandle,
                              ModifyPreviousTuples modifyPreviousTuples,
                              PropagationContext context,
                              InternalWorkingMemory workingMemory) {
         checkDirty();
 
-        if (compiledNetwork != null) {
-            compiledNetwork.modifyObject(factHandle,
-                                         modifyPreviousTuples,
-                                         context.adaptModificationMaskForObjectType(objectType, workingMemory),
-                                         workingMemory);
-        } else {
-            this.sink.propagateModifyObject(factHandle,
-                                            modifyPreviousTuples,
-                                            context.adaptModificationMaskForObjectType(objectType, workingMemory),
-                                            workingMemory);
-        }
+        this.sink.propagateModifyObject(factHandle,
+                                        modifyPreviousTuples,
+                                        context.adaptModificationMaskForObjectType(objectType, workingMemory),
+                                        workingMemory);
     }
 
+    @Override
     public void updateSink(final ObjectSink sink,
                            final PropagationContext context,
                            final InternalWorkingMemory workingMemory) {
@@ -451,6 +419,7 @@ public class ObjectTypeNode extends ObjectSource
     /**
      * Rete needs to know that this ObjectTypeNode has been added
      */
+    @Override
     public void attach(BuildContext context) {
         this.source.addObjectSink(this);
 
@@ -470,6 +439,7 @@ public class ObjectTypeNode extends ObjectSource
         }
     }
 
+    @Override
     public void networkUpdated(UpdateContext updateContext) {
         this.dirty = true;
     }
@@ -520,6 +490,7 @@ public class ObjectTypeNode extends ObjectSource
      * However PrimitiveLongMap is not ideal for spase data. So it should be monitored incase its more optimal
      * to switch back to a standard HashMap.
      */
+    @Override
     public ObjectTypeNodeMemory createMemory(final RuleBaseConfiguration config, InternalWorkingMemory wm) {
         Class<?> classType = ((ClassObjectType) getObjectType()).getClassType();
         if (InitialFact.class.isAssignableFrom(classType)) {
@@ -536,6 +507,7 @@ public class ObjectTypeNode extends ObjectSource
         this.objectMemoryEnabled = objectMemoryEnabled;
     }
 
+    @Override
     public String toString() {
         return "[ObjectTypeNode(" + this.id + ")::" + ((EntryPointNode) this.source).getEntryPoint() + " objectType=" + this.objectType + " expiration=" + this.getExpirationOffset() + "ms ]";
     }
@@ -550,7 +522,7 @@ public class ObjectTypeNode extends ObjectSource
             return true;
         }
 
-        if ( object == null || !(object instanceof ObjectTypeNode) || this.hashCode() != object.hashCode() ) {
+        if ( !(object instanceof ObjectTypeNode) || this.hashCode() != object.hashCode() ) {
             return false;
         }
 
@@ -592,6 +564,7 @@ public class ObjectTypeNode extends ObjectSource
             implements
             Job {
 
+        @Override
         public void execute(JobContext ctx) {
             ExpireJobContext context = (ExpireJobContext) ctx;
             context.workingMemory.queueWorkingMemoryAction(context.expireAction);
@@ -614,10 +587,12 @@ public class ObjectTypeNode extends ObjectSource
             this.workingMemory = workingMemory;
         }
 
+        @Override
         public JobHandle getJobHandle() {
             return this.handle;
         }
 
+        @Override
         public void setJobHandle(JobHandle jobHandle) {
             this.handle = jobHandle;
         }
@@ -638,93 +613,20 @@ public class ObjectTypeNode extends ObjectSource
             this.handle = handle;
         }
 
+        @Override
         public void readExternal(ObjectInput in) throws IOException,
                                                         ClassNotFoundException {
             //this.behavior = (O)
         }
 
+        @Override
         public void writeExternal(ObjectOutput out) throws IOException {
             // TODO Auto-generated method stub
 
         }
     }
 
-    public static class ExpireJobContextTimerOutputMarshaller
-            implements
-            TimersOutputMarshaller {
-        public void write(JobContext jobCtx,
-                          MarshallerWriteContext outputCtx) throws IOException {
-            outputCtx.writeShort( PersisterEnums.EXPIRE_TIMER );
-
-            // ExpireJob, no state
-            ExpireJobContext ejobCtx = (ExpireJobContext) jobCtx;
-            WorkingMemoryReteExpireAction expireAction = ejobCtx.getExpireAction();
-            outputCtx.writeInt( expireAction.getFactHandle().getId() );
-
-            DefaultJobHandle jobHandle = (DefaultJobHandle) ejobCtx.getJobHandle();
-            PointInTimeTrigger trigger = (PointInTimeTrigger) jobHandle.getTimerJobInstance().getTrigger();
-            outputCtx.writeLong( trigger.hasNextFireTime().getTime() );
-
-        }
-
-        public ProtobufMessages.Timers.Timer serialize(JobContext jobCtx,
-                                                       MarshallerWriteContext outputCtx) {
-            // ExpireJob, no state
-            ExpireJobContext ejobCtx = ( ExpireJobContext ) jobCtx;
-            WorkingMemoryReteExpireAction expireAction = ejobCtx.getExpireAction();
-            DefaultJobHandle jobHandle = ( DefaultJobHandle ) ejobCtx.getJobHandle();
-            PointInTimeTrigger trigger = ( PointInTimeTrigger ) jobHandle.getTimerJobInstance().getTrigger();
-
-            return ProtobufMessages.Timers.Timer.newBuilder()
-                                                .setType( ProtobufMessages.Timers.TimerType.EXPIRE )
-                                                .setExpire( ProtobufMessages.Timers.ExpireTimer.newBuilder()
-                                                                                               .setHandleId( expireAction.getFactHandle().getId() )
-                                                                                               .setNextFireTimestamp( trigger.hasNextFireTime().getTime() )
-                                                                                               .build() )
-                                                .build();
-        }
-    }
-
-    public static class ExpireJobContextTimerInputMarshaller
-            implements
-            TimersInputMarshaller {
-        public void read(MarshallerReaderContext inCtx) throws IOException,
-                                                               ClassNotFoundException {
-
-            InternalFactHandle factHandle = inCtx.handles.get( inCtx.readInt() );
-
-            long nextTimeStamp = inCtx.readLong();
-
-            TimerService clock = inCtx.wm.getTimerService();
-
-            JobContext jobctx = new ExpireJobContext( new WorkingMemoryReteExpireAction( (EventFactHandle) factHandle ),
-                                                      inCtx.wm );
-            JobHandle handle = clock.scheduleJob( job,
-                                                  jobctx,
-                                                  new PointInTimeTrigger( nextTimeStamp,
-                                                                          null,
-                                                                          null ) );
-            jobctx.setJobHandle( handle );
-
-        }
-
-        public void deserialize(MarshallerReaderContext inCtx,
-                                Timer _timer) throws ClassNotFoundException {
-            ExpireTimer _expire = _timer.getExpire();
-            InternalFactHandle factHandle = inCtx.handles.get( _expire.getHandleId() );
-
-            TimerService clock = inCtx.wm.getTimerService();
-
-            JobContext jobctx = new ExpireJobContext( new WorkingMemoryReteExpireAction((EventFactHandle)factHandle),
-                                                      inCtx.wm );
-            JobHandle jobHandle = clock.scheduleJob( job,
-                                                     jobctx,
-                                                     new PointInTimeTrigger( _expire.getNextFireTimestamp(), null, null ) );
-            jobctx.setJobHandle( jobHandle );
-            ((EventFactHandle) factHandle).addJob(jobHandle);
-        }
-    }
-
+    @Override
     public void byPassModifyToBetaNode(InternalFactHandle factHandle,
                                        ModifyPreviousTuples modifyPreviousTuples,
                                        PropagationContext context,
@@ -734,7 +636,7 @@ public class ObjectTypeNode extends ObjectSource
 
 
     public static class ObjectTypeNodeMemory implements Memory {
-        private ClassAwareObjectStore.SingleClassStore store;
+        private FactHandleClassStore store;
         private Class<?> classType;
 
         ObjectTypeNodeMemory(Class<?> classType) {
@@ -743,47 +645,57 @@ public class ObjectTypeNode extends ObjectSource
 
         ObjectTypeNodeMemory(Class<?> classType, InternalWorkingMemory wm) {
             this(classType);
-            store = ((ClassAwareObjectStore) wm.getObjectStore()).getOrCreateClassStore(classType);
+            store = wm.getStoreForClass(classType);
         }
 
+        @Override
         public short getNodeType() {
             return NodeTypeEnums.ObjectTypeNode;
         }
 
         public Iterator<InternalFactHandle> iterator() {
-            return store.factHandlesIterator(true);
+            return store.iterator();
         }
 
+        @Override
         public SegmentMemory getSegmentMemory() {
             return null;
         }
 
+        @Override
         public void setSegmentMemory(SegmentMemory segmentMemory) {
             throw new UnsupportedOperationException();
         }
 
+        @Override
         public Memory getPrevious() {
             throw new UnsupportedOperationException();
         }
 
+        @Override
         public void setPrevious(Memory previous) {
             throw new UnsupportedOperationException();
         }
 
+        @Override
         public void nullPrevNext() {
             throw new UnsupportedOperationException();
         }
 
+        @Override
         public void setNext(Memory next) {
             throw new UnsupportedOperationException();
         }
 
+        @Override
         public Memory getNext() {
             throw new UnsupportedOperationException();
         }
 
+        @Override
         public void reset() { }
 
+        @Override
         public String toString() {
             return "ObjectTypeMemory for " + classType;
         }

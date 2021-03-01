@@ -18,46 +18,59 @@
 
 package org.kie.dmn.feel.codegen.feel11;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
+import java.time.Duration;
+import java.time.chrono.ChronoPeriod;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Map.Entry;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-import org.drools.javaparser.ast.body.FieldDeclaration;
-import org.drools.javaparser.ast.expr.BinaryExpr;
-import org.drools.javaparser.ast.expr.BooleanLiteralExpr;
-import org.drools.javaparser.ast.expr.ConditionalExpr;
-import org.drools.javaparser.ast.expr.EnclosedExpr;
-import org.drools.javaparser.ast.expr.Expression;
-import org.drools.javaparser.ast.expr.LambdaExpr;
-import org.drools.javaparser.ast.expr.MethodCallExpr;
-import org.drools.javaparser.ast.expr.NameExpr;
-import org.drools.javaparser.ast.expr.NullLiteralExpr;
-import org.drools.javaparser.ast.expr.StringLiteralExpr;
+import com.github.javaparser.StaticJavaParser;
+import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.Parameter;
+import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.BooleanLiteralExpr;
+import com.github.javaparser.ast.expr.ConditionalExpr;
+import com.github.javaparser.ast.expr.EnclosedExpr;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.FieldAccessExpr;
+import com.github.javaparser.ast.expr.IntegerLiteralExpr;
+import com.github.javaparser.ast.expr.LambdaExpr;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.NullLiteralExpr;
+import com.github.javaparser.ast.expr.StringLiteralExpr;
+import com.github.javaparser.ast.type.UnknownType;
 import org.kie.dmn.feel.lang.CompositeType;
+import org.kie.dmn.feel.lang.SimpleType;
 import org.kie.dmn.feel.lang.Type;
 import org.kie.dmn.feel.lang.ast.ASTNode;
+import org.kie.dmn.feel.lang.ast.AtLiteralNode;
+import org.kie.dmn.feel.lang.ast.AtLiteralNode.TypeAndFn;
 import org.kie.dmn.feel.lang.ast.BaseNode;
 import org.kie.dmn.feel.lang.ast.BetweenNode;
 import org.kie.dmn.feel.lang.ast.BooleanNode;
+import org.kie.dmn.feel.lang.ast.CTypeNode;
 import org.kie.dmn.feel.lang.ast.ContextEntryNode;
 import org.kie.dmn.feel.lang.ast.ContextNode;
+import org.kie.dmn.feel.lang.ast.ContextTypeNode;
 import org.kie.dmn.feel.lang.ast.DashNode;
 import org.kie.dmn.feel.lang.ast.FilterExpressionNode;
 import org.kie.dmn.feel.lang.ast.ForExpressionNode;
+import org.kie.dmn.feel.lang.ast.FormalParameterNode;
 import org.kie.dmn.feel.lang.ast.FunctionDefNode;
 import org.kie.dmn.feel.lang.ast.FunctionInvocationNode;
+import org.kie.dmn.feel.lang.ast.FunctionTypeNode;
 import org.kie.dmn.feel.lang.ast.IfExpressionNode;
 import org.kie.dmn.feel.lang.ast.InNode;
 import org.kie.dmn.feel.lang.ast.InfixOpNode;
 import org.kie.dmn.feel.lang.ast.InstanceOfNode;
 import org.kie.dmn.feel.lang.ast.IterationContextNode;
 import org.kie.dmn.feel.lang.ast.ListNode;
+import org.kie.dmn.feel.lang.ast.ListTypeNode;
 import org.kie.dmn.feel.lang.ast.NameDefNode;
 import org.kie.dmn.feel.lang.ast.NameRefNode;
 import org.kie.dmn.feel.lang.ast.NamedParameterNode;
@@ -69,48 +82,22 @@ import org.kie.dmn.feel.lang.ast.QuantifiedExpressionNode;
 import org.kie.dmn.feel.lang.ast.RangeNode;
 import org.kie.dmn.feel.lang.ast.SignedUnaryNode;
 import org.kie.dmn.feel.lang.ast.StringNode;
+import org.kie.dmn.feel.lang.ast.TemporalConstantNode;
 import org.kie.dmn.feel.lang.ast.TypeNode;
 import org.kie.dmn.feel.lang.ast.UnaryTestListNode;
 import org.kie.dmn.feel.lang.ast.UnaryTestNode;
 import org.kie.dmn.feel.lang.ast.Visitor;
 import org.kie.dmn.feel.lang.impl.MapBackedType;
 import org.kie.dmn.feel.lang.types.BuiltInType;
+import org.kie.dmn.feel.parser.feel11.ScopeHelper;
 import org.kie.dmn.feel.util.EvalHelper;
+import org.kie.dmn.feel.util.Msg;
 
 import static org.kie.dmn.feel.codegen.feel11.DirectCompilerResult.mergeFDs;
 
 public class ASTCompilerVisitor implements Visitor<DirectCompilerResult> {
 
-    private static class ScopeHelper {
-        Deque<Map<String, Type>> stack;
-
-        public ScopeHelper() {
-            this.stack = new ArrayDeque<>();
-            this.stack.push(new HashMap<>());
-        }
-
-        public void addType(String name, Type type) {
-            stack.peek().put(name,
-                             type);
-        }
-
-        public void pushScope() {
-            stack.push(new HashMap<>());
-        }
-
-        public void popScope() {
-            stack.pop();
-        }
-
-        public Optional<Type> resolveType(String name) {
-            return stack.stream()
-                    .map(scope -> Optional.ofNullable(scope.get(name)))
-                    .flatMap(o -> o.isPresent() ? Stream.of(o.get()) : Stream.empty())
-                    .findFirst();
-        }
-    }
-
-    ScopeHelper scopeHelper = new ScopeHelper();
+    ScopeHelper<Type> scopeHelper = new ScopeHelper<>();
 
     @Override
     public DirectCompilerResult visit(ASTNode n) {
@@ -143,6 +130,23 @@ public class ASTCompilerVisitor implements Visitor<DirectCompilerResult> {
         return DirectCompilerResult.of(
                 Expressions.stringLiteral(n.getText()), // setString escapes the contents Java-style
                 BuiltInType.STRING);
+    }
+
+    @Override
+    public DirectCompilerResult visit(AtLiteralNode n) {
+        DirectCompilerResult stringLiteral = n.getStringLiteral().accept(this);
+        String value = ((StringLiteralExpr) stringLiteral.getExpression()).asString();
+        TypeAndFn typeAndFn = AtLiteralNode.fromAtValue(value);
+        String functionName = typeAndFn.fnName;
+        Type resultType = typeAndFn.type;
+        if (resultType == BuiltInType.UNKNOWN) {
+            return DirectCompilerResult.of(CompiledFEELSupport.compiledErrorExpression(Msg.createMessage(Msg.MALFORMED_AT_LITERAL, n.getText())),
+                                           BuiltInType.UNKNOWN);
+        }
+        return DirectCompilerResult.of(Expressions.invoke(FeelCtx.getValue(functionName),
+                                                          stringLiteral.getExpression()),
+                                       resultType)
+                                   .withFD(stringLiteral);
     }
 
     @Override
@@ -184,7 +188,7 @@ public class ASTCompilerVisitor implements Visitor<DirectCompilerResult> {
     @Override
     public DirectCompilerResult visit(NameRefNode n) {
         String nameRef = EvalHelper.normalizeVariableName(n.getText());
-        Type type = scopeHelper.resolveType(nameRef).orElse(BuiltInType.UNKNOWN);
+        Type type = scopeHelper.resolve(nameRef).orElse(BuiltInType.UNKNOWN);
         return DirectCompilerResult.of(FeelCtx.getValue(nameRef), type);
     }
 
@@ -229,17 +233,66 @@ public class ASTCompilerVisitor implements Visitor<DirectCompilerResult> {
     public DirectCompilerResult visit(InstanceOfNode n) {
         DirectCompilerResult expr = n.getExpression().accept(this);
         DirectCompilerResult type = n.getType().accept(this);
-        return DirectCompilerResult.of(
-                Expressions.isInstanceOf(expr.getExpression(), type.getExpression()),
-                BuiltInType.BOOLEAN,
-                mergeFDs(expr, type));
+        switch (n.getType().getText()) {
+            case SimpleType.YEARS_AND_MONTHS_DURATION:
+                return DirectCompilerResult.of(Expressions.nativeInstanceOf(StaticJavaParser.parseClassOrInterfaceType(ChronoPeriod.class.getCanonicalName()),
+                                                                            expr.getExpression()),
+                                               BuiltInType.BOOLEAN,
+                                               mergeFDs(expr, type));
+            case SimpleType.DAYS_AND_TIME_DURATION:
+                return DirectCompilerResult.of(Expressions.nativeInstanceOf(StaticJavaParser.parseClassOrInterfaceType(Duration.class.getCanonicalName()),
+                                                                            expr.getExpression()),
+                                               BuiltInType.BOOLEAN,
+                                               mergeFDs(expr, type));
+            default:
+                return DirectCompilerResult.of(Expressions.isInstanceOf(expr.getExpression(), type.getExpression()),
+                                               BuiltInType.BOOLEAN,
+                                               mergeFDs(expr, type));
+        }
+
     }
 
     @Override
-    public DirectCompilerResult visit(TypeNode n) {
-        return DirectCompilerResult.of(
-                Expressions.determineTypeFromName(n.getText()),
-                BuiltInType.UNKNOWN);
+    public DirectCompilerResult visit(CTypeNode n) {
+        if (!(n.getType() instanceof BuiltInType)) {
+            throw new UnsupportedOperationException();
+        }
+        BuiltInType feelCType = (BuiltInType) n.getType();
+        return DirectCompilerResult.of(new FieldAccessExpr(Constants.BuiltInTypeT, feelCType.name()),
+                                       BuiltInType.UNKNOWN);
+    }
+
+    @Override
+    public DirectCompilerResult visit(ListTypeNode n) {
+        DirectCompilerResult expr = n.getGenTypeNode().accept(this);
+        return DirectCompilerResult.of(Expressions.genListType(expr.getExpression()),
+                                       BuiltInType.UNKNOWN,
+                                       mergeFDs(expr));
+    }
+
+    @Override
+    public DirectCompilerResult visit(ContextTypeNode n) {
+        Map<String, DirectCompilerResult> fields = new HashMap<>();
+        for (Entry<String, TypeNode> kv : n.getGen().entrySet()) {
+            fields.put(kv.getKey(), kv.getValue().accept(this));
+        }
+        return DirectCompilerResult.of(Expressions.genContextType(fields.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().getExpression()))),
+                                       BuiltInType.UNKNOWN,
+                                       mergeFDs(fields.values().stream().collect(Collectors.toList())));
+    }
+
+    @Override
+    public DirectCompilerResult visit(FunctionTypeNode n) {
+        List<DirectCompilerResult> args = new ArrayList<>();
+        for (TypeNode arg : n.getArgTypes()) {
+            args.add(arg.accept(this));
+        }
+        DirectCompilerResult ret = n.getRetType().accept(this);
+        return DirectCompilerResult.of(Expressions.genFnType(args.stream().map(DirectCompilerResult::getExpression).collect(Collectors.toList()),
+                                                             ret.getExpression()),
+                                       BuiltInType.UNKNOWN,
+                                       mergeFDs(args))
+                                   .withFD(ret);
     }
 
     @Override
@@ -327,7 +380,7 @@ public class ASTCompilerVisitor implements Visitor<DirectCompilerResult> {
                 .stream()
                 .map(e -> {
                     DirectCompilerResult r = e.accept(this);
-                    scopeHelper.addType(e.getName().getText(), r.resultType);
+                    scopeHelper.addInScope(e.getName().getText(), r.resultType);
                     return r;
                 })
                 .reduce(openContext,
@@ -380,6 +433,16 @@ public class ASTCompilerVisitor implements Visitor<DirectCompilerResult> {
     }
 
     @Override
+    public DirectCompilerResult visit(FormalParameterNode n) {
+        DirectCompilerResult name = n.getName().accept(this);
+        DirectCompilerResult type = n.getType().accept(this);
+        return DirectCompilerResult.of(Expressions.formalParameter(name.getExpression(), type.getExpression()),
+                                       BuiltInType.UNKNOWN)
+                                   .withFD(name)
+                                   .withFD(type);
+    }
+
+    @Override
     public DirectCompilerResult visit(FunctionDefNode n) {
         MethodCallExpr list = Expressions.list();
         n.getFormalParameters()
@@ -391,8 +454,9 @@ public class ASTCompilerVisitor implements Visitor<DirectCompilerResult> {
         if (n.isExternal()) {
             List<String> paramNames =
                     n.getFormalParameters().stream()
-                            .map(BaseNode::getText)
-                            .collect(Collectors.toList());
+                     .map(FormalParameterNode::getName)
+                     .map(BaseNode::getText)
+                     .collect(Collectors.toList());
 
             return Functions.declaration(
                     n, list,
@@ -406,6 +470,10 @@ public class ASTCompilerVisitor implements Visitor<DirectCompilerResult> {
 
     @Override
     public DirectCompilerResult visit(FunctionInvocationNode n) {
+        TemporalConstantNode tcFolded = n.getTcFolded();
+        if (tcFolded != null) {
+            return replaceWithTemporalConstant(n, tcFolded);
+        }
         DirectCompilerResult functionName = n.getName().accept(this);
         DirectCompilerResult params = n.getParams().accept(this);
         return DirectCompilerResult.of(
@@ -413,6 +481,29 @@ public class ASTCompilerVisitor implements Visitor<DirectCompilerResult> {
                 functionName.resultType)
                 .withFD(functionName)
                 .withFD(params);
+    }
+
+    public DirectCompilerResult replaceWithTemporalConstant(FunctionInvocationNode n, TemporalConstantNode tcFolded) {
+        MethodCallExpr methodCallExpr = new MethodCallExpr(new FieldAccessExpr(new NameExpr(tcFolded.fn.getClass().getCanonicalName()),
+                                                                               "INSTANCE"),
+                                                           "invoke");
+        for (Object p : tcFolded.params) {
+            if (p instanceof String) {
+                methodCallExpr.addArgument(Expressions.stringLiteral((String) p));
+            } else if (p instanceof Number) {
+                methodCallExpr.addArgument(new IntegerLiteralExpr(p.toString()));
+            } else {
+                throw new IllegalStateException("Unexpected Temporal Constant parameter found.");
+            }
+        }
+        methodCallExpr = new MethodCallExpr(methodCallExpr, "getOrElseThrow"); // since this AST Node exists, the Fn invocation returns result.
+        methodCallExpr.addArgument(new LambdaExpr(new Parameter(new UnknownType(), "e"),
+                                                  Expressions.newIllegalState()));
+        String constantName = Constants.dtConstantName(n.getText());
+        FieldDeclaration constant = Constants.dtConstant(constantName, methodCallExpr);
+        return DirectCompilerResult.of(new NameExpr(constantName),
+                                       BuiltInType.UNKNOWN,
+                                       constant);
     }
 
     @Override

@@ -15,14 +15,19 @@
 
 package org.drools.verifier.jarloader;
 
-import com.google.common.collect.TreeMultimap;
-
-import org.drools.core.util.asm.ClassFieldInspector;
-import org.kie.soup.project.datamodel.commons.types.ClassTypeResolver;
-
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarInputStream;
+
+import com.google.common.collect.TreeMultimap;
+import org.drools.core.addon.ClassTypeResolver;
+import org.drools.mvel.asm.ClassFieldInspectorImpl;
 
 public class PackageHeaderLoader {
 
@@ -59,7 +64,7 @@ public class PackageHeaderLoader {
     private void addFields(Class clazz) throws IOException {
         String className = clazz.getName();
 
-        ClassFieldInspector inspector = new ClassFieldInspector(clazz);
+        ClassFieldInspectorImpl inspector = new ClassFieldInspectorImpl(clazz);
         Set<String> fieldNames = inspector.getFieldNames().keySet();
         Map<String, Class<?>> fieldTypes = inspector.getFieldTypes();
 

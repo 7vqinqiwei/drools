@@ -21,10 +21,10 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.Collection;
 
+import org.drools.core.io.internal.InternalResource;
 import org.drools.core.util.IoUtils;
 import org.kie.api.builder.ReleaseId;
 import org.kie.api.builder.model.KieModuleModel;
-import org.kie.api.io.Resource;
 import org.kie.internal.io.ResourceFactory;
 
 import static org.drools.core.util.IoUtils.readBytesFromInputStream;
@@ -61,16 +61,16 @@ public class FileKieModule extends AbstractKieModule implements InternalKieModul
     public byte[] getBytes(String pResourceName ) {
         try {
             File resource = new File( file, pResourceName);
-            return resource.exists() ? IoUtils.readBytesFromInputStream( new FileInputStream( resource ) ) : null;
+            return resource.exists() && !resource.isDirectory() ? IoUtils.readBytesFromInputStream( new FileInputStream( resource ) ) : null;
         } catch ( IOException e ) {
             throw new RuntimeException("Unable to get bytes for: " + new File( file, pResourceName) + " " +e.getMessage());
         }
     }
 
     @Override
-    public Resource getResource( String fileName ) {
+    public InternalResource getResource( String fileName ) {
         File resource = new File( file, fileName);
-        return resource.exists() ? ResourceFactory.newFileResource( resource ) : null;
+        return resource.exists() ? ( InternalResource ) ResourceFactory.newFileResource( resource ) : null;
     }
 
     @Override

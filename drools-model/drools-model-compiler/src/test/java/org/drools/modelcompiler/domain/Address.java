@@ -4,6 +4,7 @@ public class Address {
 
     private String street;
     private int number;
+    private short shortNumber;
     private String city;
 
     public Address() {
@@ -45,6 +46,18 @@ public class Address {
         this.city = city;
     }
 
+    public short getShortNumber() {
+        return shortNumber;
+    }
+
+    public short getShortNumberBoxed() {
+        return shortNumber;
+    }
+
+    public void setShortNumber(short shortNumber) {
+        this.shortNumber = shortNumber;
+    }
+
     public int hashCode() {
         final int prime = 31;
         int result = 1;
@@ -83,5 +96,15 @@ public class Address {
             return false;
         }
         return true;
+    }
+
+    @Override
+    public String toString() {
+        return "Address{" +
+                "street='" + street + '\'' +
+                ", number=" + number +
+                ", shortNumber=" + shortNumber +
+                ", city='" + city + '\'' +
+                '}';
     }
 }

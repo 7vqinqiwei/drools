@@ -30,6 +30,8 @@ import org.kie.dmn.api.feel.runtime.events.FEELEvent;
 import org.kie.dmn.core.api.DMNFactory;
 import org.kie.dmn.core.util.DMNRuntimeUtil;
 import org.kie.dmn.feel.runtime.events.HitPolicyViolationEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
@@ -38,10 +40,12 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.hasEntry;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.isEmptyOrNullString;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 public class DMNDecisionTableHitPolicyTest extends BaseInterpretedVsCompiledTest {
+
+    public static final Logger LOG = LoggerFactory.getLogger(DMNDecisionTableHitPolicyTest.class);
 
     public DMNDecisionTableHitPolicyTest(final boolean useExecModelCompiler ) {
         super( useExecModelCompiler );
@@ -78,6 +82,10 @@ public class DMNDecisionTableHitPolicyTest extends BaseInterpretedVsCompiledTest
         final DMNModel dmnModel = runtime.getModel("https://github.com/kiegroup/kie-dmn", "0004-simpletable-U-noinputvalues");
         assertThat(dmnModel, notNullValue());
 
+        check_testSimpleDecisionTableHitPolicyUniqueNullWarn(runtime, dmnModel);
+    }
+
+    private void check_testSimpleDecisionTableHitPolicyUniqueNullWarn(DMNRuntime runtime, DMNModel dmnModel) {
         final DMNContext context = getSimpleTableContext(BigDecimal.valueOf(18), "ASD", false);
         final DMNResult dmnResult = runtime.evaluateAll(dmnModel, context);
         final DMNContext result = dmnResult.getContext();
@@ -85,6 +93,24 @@ public class DMNDecisionTableHitPolicyTest extends BaseInterpretedVsCompiledTest
         assertThat(result.get("Approval Status"), nullValue());
         assertTrue(dmnResult.getMessages().size() > 0);
         assertTrue(dmnResult.getMessages().stream().anyMatch(dm -> dm.getSeverity().equals(DMNMessage.Severity.WARN) && dm.getFeelEvent() instanceof HitPolicyViolationEvent && dm.getFeelEvent().getSeverity().equals(FEELEvent.Severity.WARN)));
+    }
+
+    @Test
+    public void testSimpleDecisionTableHitPolicyUniqueNullWarn_ctxe() {
+        final DMNRuntime runtime = DMNRuntimeUtil.createRuntime("0004-simpletable-U-noinputvalues-ctxe.dmn", this.getClass());
+        final DMNModel dmnModel = runtime.getModel("https://github.com/kiegroup/kie-dmn", "0004-simpletable-U-noinputvalues");
+        assertThat(dmnModel, notNullValue());
+
+        check_testSimpleDecisionTableHitPolicyUniqueNullWarn(runtime, dmnModel);
+    }
+
+    @Test
+    public void testSimpleDecisionTableHitPolicyUniqueNullWarn_ctxr() {
+        final DMNRuntime runtime = DMNRuntimeUtil.createRuntime("0004-simpletable-U-noinputvalues-ctxr.dmn", this.getClass());
+        final DMNModel dmnModel = runtime.getModel("https://github.com/kiegroup/kie-dmn", "0004-simpletable-U-noinputvalues");
+        assertThat(dmnModel, notNullValue());
+
+        check_testSimpleDecisionTableHitPolicyUniqueNullWarn(runtime, dmnModel);
     }
 
     @Test
@@ -332,4 +358,31 @@ public class DMNDecisionTableHitPolicyTest extends BaseInterpretedVsCompiledTest
         assertThat(result.get("Collect"), is(BigDecimal.valueOf(50)));
     }
 
+    @Test
+    public void testDecisionTableHitPolicyAnyWithOverlap_DoOverlap() {
+        final DMNResult dmnResult = executeHitPolicyAnyWithOverlap(20);
+        assertThat(dmnResult.hasErrors(), is(true));
+        assertTrue(dmnResult.getMessages().size() > 0);
+        assertTrue(dmnResult.getMessages().stream().anyMatch(dm -> dm.getFeelEvent() instanceof HitPolicyViolationEvent && dm.getFeelEvent().getSeverity().equals(FEELEvent.Severity.ERROR)));
+        assertThat(dmnResult.getDecisionResultByName("a decision").getResult(), nullValue());
+    }
+
+    @Test
+    public void testDecisionTableHitPolicyAnyWithOverlap_NoOverlap() {
+        final DMNResult dmnResult = executeHitPolicyAnyWithOverlap(-1);
+        assertThat(dmnResult.hasErrors(), is(false));
+        assertThat(dmnResult.getDecisionResultByName("a decision").getResult(), is("boh"));
+    }
+
+    private DMNResult executeHitPolicyAnyWithOverlap(long number) {
+        final DMNRuntime runtime = DMNRuntimeUtil.createRuntime("hitpolicyAnyWithOverlap.dmn", this.getClass());
+        final DMNModel dmnModel = runtime.getModel("http://www.trisotech.com/definitions/_84872d6e-44c2-4c7c-a5b1-46be7b672fc8", "Drawing 1");
+        assertThat(dmnModel, notNullValue());
+
+        final DMNContext context = DMNFactory.newContext();
+        context.set("a number", number);
+
+        final DMNResult dmnResult = runtime.evaluateAll(dmnModel, context);
+        return dmnResult;
+    }
 }

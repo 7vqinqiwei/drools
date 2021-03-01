@@ -23,9 +23,8 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.github.javaparser.ast.expr.Expression;
 import org.antlr.v4.runtime.tree.ParseTree;
-import org.drools.javaparser.ast.expr.Expression;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.kie.dmn.feel.lang.EvaluationContext;
 import org.kie.dmn.feel.lang.FEELProperty;
@@ -46,7 +45,7 @@ import org.slf4j.LoggerFactory;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.nullValue;
-import static org.junit.Assert.assertThat;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.kie.dmn.feel.util.DynamicTypeUtils.entry;
 import static org.kie.dmn.feel.util.DynamicTypeUtils.mapOf;
 
@@ -202,7 +201,7 @@ public class DirectCompilerTest {
     public void test_between() {
         assertThat(parseCompileEvaluate("10 between 5 and 12"), is(true));
         assertThat(parseCompileEvaluate("10 between 20 and 30"), is(false));
-        assertThat(parseCompileEvaluate("10 between 20 and \"foo\""), nullValue());
+        assertThat(parseCompileEvaluate("10 between 5 and \"foo\""), nullValue());
         assertThat(parseCompileEvaluate("\"foo\" between 5 and 12"), nullValue());
         assertThat(parseCompileEvaluate("\"foo\" between \"bar\" and \"zap\""), is(true));
         assertThat(parseCompileEvaluate("\"foo\" between null and \"zap\""), nullValue());
@@ -478,11 +477,11 @@ public class DirectCompilerTest {
     }
 
     private CompiledFEELExpression parse(String input, Map<String, Type> inputTypes) {
-        FEEL_1_1Parser parser = FEELParser.parse(null, input, inputTypes, Collections.emptyMap(), Collections.emptyList(), Collections.emptyList());
+        FEEL_1_1Parser parser = FEELParser.parse(null, input, inputTypes, Collections.emptyMap(), Collections.emptyList(), Collections.emptyList(), null);
 
         ParseTree tree = parser.compilation_unit();
 
-        ASTBuilderVisitor v = new ASTBuilderVisitor(inputTypes);
+        ASTBuilderVisitor v = new ASTBuilderVisitor(inputTypes, null);
         BaseNode node = v.visit(tree);
         DirectCompilerResult directResult = node.accept(new ASTCompilerVisitor());
         

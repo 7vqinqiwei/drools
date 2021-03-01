@@ -23,4 +23,10 @@ public interface TemporalPredicate {
     Interval getInterval();
 
     boolean isNegated();
+
+    TemporalPredicate negate();
+
+    boolean isThisOnRight();
+
+    TemporalPredicate thisOnRight();
 }

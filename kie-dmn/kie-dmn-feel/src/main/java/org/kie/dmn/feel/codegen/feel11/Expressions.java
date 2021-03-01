@@ -18,41 +18,51 @@
 
 package org.kie.dmn.feel.codegen.feel11;
 
-import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
-import org.drools.javaparser.JavaParser;
-import org.drools.javaparser.ast.NodeList;
-import org.drools.javaparser.ast.body.FieldDeclaration;
-import org.drools.javaparser.ast.body.Parameter;
-import org.drools.javaparser.ast.expr.CastExpr;
-import org.drools.javaparser.ast.expr.ClassExpr;
-import org.drools.javaparser.ast.expr.EnclosedExpr;
-import org.drools.javaparser.ast.expr.Expression;
-import org.drools.javaparser.ast.expr.LambdaExpr;
-import org.drools.javaparser.ast.expr.MethodCallExpr;
-import org.drools.javaparser.ast.expr.NameExpr;
-import org.drools.javaparser.ast.expr.ObjectCreationExpr;
-import org.drools.javaparser.ast.expr.StringLiteralExpr;
-import org.drools.javaparser.ast.stmt.ExpressionStmt;
-import org.drools.javaparser.ast.type.ClassOrInterfaceType;
-import org.drools.javaparser.ast.type.Type;
-import org.drools.javaparser.ast.type.UnknownType;
+import com.github.javaparser.ast.NodeList;
+import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.Parameter;
+import com.github.javaparser.ast.expr.CastExpr;
+import com.github.javaparser.ast.expr.ClassExpr;
+import com.github.javaparser.ast.expr.EnclosedExpr;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.LambdaExpr;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.MethodReferenceExpr;
+import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.ast.expr.StringLiteralExpr;
+import com.github.javaparser.ast.stmt.ExpressionStmt;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
+import com.github.javaparser.ast.type.Type;
+import com.github.javaparser.ast.type.UnknownType;
 import org.kie.dmn.feel.lang.ast.InfixOpNode;
 import org.kie.dmn.feel.lang.ast.QuantifiedExpressionNode;
 import org.kie.dmn.feel.lang.ast.RangeNode;
 import org.kie.dmn.feel.lang.ast.UnaryTestNode;
+import org.kie.dmn.feel.lang.impl.MapBackedType;
 import org.kie.dmn.feel.lang.impl.NamedParameter;
+import org.kie.dmn.feel.lang.types.GenFnType;
+import org.kie.dmn.feel.lang.types.GenListType;
+import org.kie.dmn.feel.runtime.functions.BaseFEELFunction;
 import org.kie.dmn.feel.util.EvalHelper;
 
+import static com.github.javaparser.StaticJavaParser.parseClassOrInterfaceType;
+import static com.github.javaparser.StaticJavaParser.parseExpression;
 import static org.kie.dmn.feel.codegen.feel11.Constants.BigDecimalT;
 import static org.kie.dmn.feel.codegen.feel11.Constants.BuiltInTypeT;
-import static org.kie.dmn.feel.codegen.feel11.Constants.DECIMAL_128;
 
 public class Expressions {
 
-    public static final ClassOrInterfaceType NamedParamterT = new ClassOrInterfaceType(null, NamedParameter.class.getCanonicalName());
-    private static final Expression DASH_UNARY_TEST = JavaParser.parseExpression(org.kie.dmn.feel.lang.ast.DashNode.DashUnaryTest.class.getCanonicalName() + ".INSTANCE");
+    public static final ClassOrInterfaceType NamedParamterT = parseClassOrInterfaceType(NamedParameter.class.getCanonicalName());
+    public static final ClassOrInterfaceType FormalParamterT = parseClassOrInterfaceType(BaseFEELFunction.Param.class.getCanonicalName());
+    public static final ClassOrInterfaceType GenListTypeT = parseClassOrInterfaceType(GenListType.class.getCanonicalName());
+    public static final ClassOrInterfaceType MapBackedTypeT = parseClassOrInterfaceType(MapBackedType.class.getCanonicalName());
+    public static final ClassOrInterfaceType GenFnTypeT = parseClassOrInterfaceType(GenFnType.class.getCanonicalName());
+    private static final Expression DASH_UNARY_TEST = parseExpression(org.kie.dmn.feel.lang.ast.DashNode.DashUnaryTest.class.getCanonicalName() + ".INSTANCE");
 
     public static class NamedLambda {
 
@@ -80,8 +90,8 @@ public class Expressions {
         }
     }
 
-    private static final Expression QUANTIFIER_SOME = JavaParser.parseExpression("org.kie.dmn.feel.lang.ast.QuantifiedExpressionNode.Quantifier.SOME");
-    private static final Expression QUANTIFIER_EVERY = JavaParser.parseExpression("org.kie.dmn.feel.lang.ast.QuantifiedExpressionNode.Quantifier.EVERY");
+    private static final Expression QUANTIFIER_SOME = parseExpression("org.kie.dmn.feel.lang.ast.QuantifiedExpressionNode.Quantifier.SOME");
+    private static final Expression QUANTIFIER_EVERY = parseExpression("org.kie.dmn.feel.lang.ast.QuantifiedExpressionNode.Quantifier.EVERY");
 
     public static final String LEFT = "left";
     public static final NameExpr LEFT_EXPR = new NameExpr(LEFT);
@@ -148,7 +158,7 @@ public class Expressions {
 
     private static MethodCallExpr booleans(String op, Expression left, Expression right) {
         Expression l = coerceToBoolean(left);
-        Expression r = coerceToBoolean(right);
+        Expression r = supplierLambda(coerceToBoolean(right));
 
         return new MethodCallExpr(null, op, new NodeList<>(l, r));
     }
@@ -166,14 +176,14 @@ public class Expressions {
             case GTE:
                 return unaryComparison("gte", right);
             case EQ:
-                return new MethodCallExpr(null, "gracefulEq", new NodeList<>(FeelCtx.FEELCTX, right, LEFT_EXPR));
+                return new MethodCallExpr(compiledFeelSemanticMappingsFQN(), "gracefulEq", new NodeList<>(FeelCtx.FEELCTX, right, LEFT_EXPR));
             case NE:
                 return unaryComparison("ne", right);
             case IN:
                 // only used in decision tables: refactor? how?
-                return new MethodCallExpr(null, "includes", new NodeList<>(FeelCtx.FEELCTX, right, LEFT_EXPR));
+                return new MethodCallExpr(compiledFeelSemanticMappingsFQN(), "includes", new NodeList<>(FeelCtx.FEELCTX, right, LEFT_EXPR));
             case NOT:
-                return new MethodCallExpr(null, "notExists", new NodeList<>(FeelCtx.FEELCTX, right, LEFT_EXPR));
+                return new MethodCallExpr(compiledFeelSemanticMappingsFQN(), "notExists", new NodeList<>(FeelCtx.FEELCTX, right, LEFT_EXPR));
             case TEST:
                 return coerceToBoolean(right);
             default:
@@ -182,7 +192,7 @@ public class Expressions {
     }
 
     public static MethodCallExpr unaryComparison(String operator, Expression right) {
-        return new MethodCallExpr(null, operator, new NodeList<>(LEFT_EXPR, right));
+        return new MethodCallExpr(compiledFeelSemanticMappingsFQN(), operator, new NodeList<>(LEFT_EXPR, right));
     }
 
     public static MethodCallExpr lt(Expression left, Expression right) {
@@ -252,21 +262,20 @@ public class Expressions {
                 .addArgument(returnExpr);
     }
 
+    public static NameExpr compiledFeelSemanticMappingsFQN() {
+        return new NameExpr("org.kie.dmn.feel.codegen.feel11.CompiledFEELSemanticMappings");
+    }
+
     public static MethodCallExpr list(Expression... exprs) {
-        return new MethodCallExpr(null, "list", NodeList.nodeList(exprs));
+        return new MethodCallExpr(compiledFeelSemanticMappingsFQN(), "list", NodeList.nodeList(exprs));
     }
-
-    public static MethodCallExpr list(Collection<Expression> exprs) {
-        return new MethodCallExpr(null, "list", NodeList.nodeList(exprs));
-    }
-
 
     public static MethodCallExpr range(RangeNode.IntervalBoundary lowBoundary,
                                        Expression lowEndPoint,
                                        Expression highEndPoint,
                                        RangeNode.IntervalBoundary highBoundary) {
 
-        return new MethodCallExpr(null, "range")
+        return new MethodCallExpr(compiledFeelSemanticMappingsFQN(), "range")
                 .addArgument(FeelCtx.FEELCTX)
                 .addArgument(Constants.rangeBoundary(lowBoundary))
                 .addArgument(lowEndPoint)
@@ -275,21 +284,21 @@ public class Expressions {
     }
 
     public static MethodCallExpr includes(Expression range, Expression target) {
-        return new MethodCallExpr(null, "includes")
+        return new MethodCallExpr(compiledFeelSemanticMappingsFQN(), "includes")
                 .addArgument(FeelCtx.FEELCTX)
                 .addArgument(range)
                 .addArgument(target);
     }
 
     public static MethodCallExpr exists(Expression tests, Expression target) {
-        return new MethodCallExpr(null, "exists")
+        return new MethodCallExpr(compiledFeelSemanticMappingsFQN(), "exists")
                 .addArgument(FeelCtx.FEELCTX)
                 .addArgument(tests)
                 .addArgument(target);
     }
 
     public static MethodCallExpr notExists(Expression expr) {
-        return new MethodCallExpr(null, "notExists")
+        return new MethodCallExpr(compiledFeelSemanticMappingsFQN(), "notExists")
                 .addArgument(FeelCtx.FEELCTX)
                 .addArgument(expr)
                 .addArgument(LEFT_EXPR);
@@ -308,6 +317,12 @@ public class Expressions {
                         new Parameter(UNKNOWN_TYPE, FeelCtx.FEELCTX_N)),
                 new ExpressionStmt(expr),
                 true);
+    }
+
+    public static LambdaExpr supplierLambda(Expression expr) {
+        return new LambdaExpr(new NodeList<>(),
+                              new ExpressionStmt(expr),
+                              true);
     }
 
     public static NamedLambda namedUnaryLambda(Expression expr, String text) {
@@ -329,6 +344,10 @@ public class Expressions {
 
     public static ObjectCreationExpr namedParameter(Expression name, Expression value) {
         return new ObjectCreationExpr(null, NamedParamterT, new NodeList<>(name, value));
+    }
+
+    public static ObjectCreationExpr formalParameter(Expression name, Expression type) {
+        return new ObjectCreationExpr(null, FormalParamterT, new NodeList<>(name, type));
     }
 
     public static MethodCallExpr invoke(Expression functionName, Expression params) {
@@ -380,6 +399,37 @@ public class Expressions {
                 .addArgument(new StringLiteralExpr(typeAsText));
     }
 
+    public static ObjectCreationExpr genListType(Expression gen) {
+        return new ObjectCreationExpr(null, GenListTypeT, new NodeList<>(gen));
+    }
+
+    public static Expression genContextType(Map<String, Expression> fields) {
+        final ClassOrInterfaceType sie = parseClassOrInterfaceType(java.util.AbstractMap.SimpleImmutableEntry.class.getCanonicalName());
+        sie.setTypeArguments(parseClassOrInterfaceType(String.class.getCanonicalName()),
+                             parseClassOrInterfaceType(org.kie.dmn.feel.lang.Type.class.getCanonicalName()));
+        List<Expression> entryParams = fields.entrySet().stream().map(e -> new ObjectCreationExpr(null,
+                                                                                                  sie,
+                                                                                                  new NodeList<>(stringLiteral(e.getKey()),
+                                                                                                                 e.getValue())))
+                                             .collect(Collectors.toList());
+        MethodCallExpr mOf = new MethodCallExpr(new NameExpr(java.util.stream.Stream.class.getCanonicalName()), "of");
+        entryParams.forEach(mOf::addArgument);
+        MethodCallExpr mCollect = new MethodCallExpr(mOf, "collect");
+        mCollect.addArgument(new MethodCallExpr(new NameExpr(java.util.stream.Collectors.class.getCanonicalName()),
+                                                "toMap").addArgument(new MethodReferenceExpr(new NameExpr(java.util.Map.Entry.class.getCanonicalName()), new NodeList<>(), "getKey"))
+                                                        .addArgument(new MethodReferenceExpr(new NameExpr(java.util.Map.Entry.class.getCanonicalName()), new NodeList<>(), "getValue")));
+        return new ObjectCreationExpr(null, MapBackedTypeT, new NodeList<>(stringLiteral("[anonymous]"), mCollect));
+    }
+
+    public static ObjectCreationExpr genFnType(List<Expression> args, Expression ret) {
+        return new ObjectCreationExpr(null,
+                                      GenFnTypeT,
+                                      new NodeList<>(new MethodCallExpr(new NameExpr(java.util.Arrays.class.getCanonicalName()),
+                                                                        "asList",
+                                                                        new NodeList<>(args)),
+                                                     ret));
+    }
+
     public static Expression contains(Expression expr, Expression value) {
         return new MethodCallExpr(expr, "contains")
                 .addArgument(value);
@@ -396,7 +446,7 @@ public class Expressions {
     }
 
     public static Expression coerceToBoolean(Expression expression) {
-        return new MethodCallExpr(null, "coerceToBoolean")
+        return new MethodCallExpr(compiledFeelSemanticMappingsFQN(), "coerceToBoolean")
                 .addArgument(FeelCtx.FEELCTX)
                 .addArgument(expression);
     }
@@ -405,6 +455,12 @@ public class Expressions {
         MethodCallExpr coerceNumberMethodCallExpr = new MethodCallExpr(new NameExpr(CompiledFEELSupport.class.getSimpleName()), "coerceNumber");
         coerceNumberMethodCallExpr.addArgument(exprCursor);
         return coerceNumberMethodCallExpr;
+    }
+
+    public static ObjectCreationExpr newIllegalState() {
+        return new ObjectCreationExpr(null,
+                                      parseClassOrInterfaceType(IllegalStateException.class.getCanonicalName()),
+                                      new NodeList<>());
     }
 }
 

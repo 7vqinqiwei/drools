@@ -2,12 +2,16 @@ package org.kie.dmn.feel.codegen.feel11;
 
 import java.util.List;
 
+import com.github.javaparser.ast.CompilationUnit;
 import org.antlr.v4.runtime.tree.ParseTree;
-import org.drools.javaparser.ast.CompilationUnit;
+import org.kie.dmn.api.feel.runtime.events.FEELEvent;
+import org.kie.dmn.api.feel.runtime.events.FEELEventListener;
 import org.kie.dmn.feel.lang.CompilerContext;
 import org.kie.dmn.feel.lang.EvaluationContext;
 import org.kie.dmn.feel.lang.FEELProfile;
 import org.kie.dmn.feel.lang.ast.BaseNode;
+import org.kie.dmn.feel.lang.ast.visitor.ASTHeuristicCheckerVisitor;
+import org.kie.dmn.feel.lang.ast.visitor.ASTTemporalConstantVisitor;
 import org.kie.dmn.feel.lang.impl.CompiledExecutableExpression;
 import org.kie.dmn.feel.lang.impl.CompiledExpressionImpl;
 import org.kie.dmn.feel.lang.impl.InterpretedExecutableExpression;
@@ -15,6 +19,7 @@ import org.kie.dmn.feel.lang.types.BuiltInType;
 import org.kie.dmn.feel.parser.feel11.ASTBuilderVisitor;
 
 import static org.kie.dmn.feel.codegen.feel11.ProcessedFEELUnit.DefaultMode.Compiled;
+import static org.kie.dmn.feel.util.ClassLoaderUtil.CAN_PLATFORM_CLASSLOAD;;
 
 public class ProcessedExpression extends ProcessedFEELUnit {
 
@@ -36,13 +41,30 @@ public class ProcessedExpression extends ProcessedFEELUnit {
 
         super(expression, ctx, profiles);
         this.defaultBackend = defaultBackend;
-        ParseTree tree = parser.compilation_unit();
-        ast = tree.accept(new ASTBuilderVisitor(ctx.getInputVariableTypes()));
+        ParseTree tree = getFEELParser(expression, ctx, profiles).compilation_unit();
+        ASTBuilderVisitor astVisitor = new ASTBuilderVisitor(ctx.getInputVariableTypes(), ctx.getFEELFeelTypeRegistry());
+        ast = tree.accept(astVisitor);
+        if (ast == null) {
+            return; // if parsetree/ast is invalid, no need of further processing and early return.
+        }
+        List<FEELEvent> heuristicChecks = ast.accept(new ASTHeuristicCheckerVisitor());
+        if (!heuristicChecks.isEmpty()) {
+            for (FEELEventListener listener : ctx.getListeners()) {
+                heuristicChecks.forEach(listener::onEvent);
+            }
+        }
+        if (astVisitor.isVisitedTemporalCandidate()) {
+            ast.accept(new ASTTemporalConstantVisitor(ctx));
+        }
     }
 
     public CompiledFEELExpression getResult() {
         if (defaultBackend == Compiled) {
-            defaultResult = getCompiled();
+            if (CAN_PLATFORM_CLASSLOAD) {
+                defaultResult = getCompiled();
+            } else {
+                throw new UnsupportedOperationException("Cannot jit classload on this platform.");
+            }
         } else { // "legacy" interpreted AST compilation:
             defaultResult = getInterpreted();
         }
@@ -80,7 +102,8 @@ public class ProcessedExpression extends ProcessedFEELUnit {
                 TEMPLATE_CLASS,
                 expression,
                 compilerResult.getExpression(),
-                compilerResult.getFieldDeclarations());
+                compilerResult.getFieldDeclarations()
+        );
     }
 
     public InterpretedExecutableExpression getInterpreted() {

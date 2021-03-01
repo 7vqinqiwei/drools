@@ -33,6 +33,7 @@ import org.kie.dmn.core.api.EvaluatorResult;
 import org.kie.dmn.core.api.EvaluatorResult.ResultType;
 import org.kie.dmn.core.ast.DMNFunctionDefinitionEvaluator.FormalParameter;
 import org.kie.dmn.core.impl.DMNResultImpl;
+import org.kie.dmn.core.impl.DMNRuntimeImpl;
 import org.kie.dmn.core.util.Msg;
 import org.kie.dmn.core.util.MsgUtil;
 import org.kie.dmn.feel.lang.EvaluationContext;
@@ -61,6 +62,7 @@ public class DMNDecisionServiceFunctionDefinitionEvaluator implements DMNExpress
     }
 
     public static class DSFormalParameter extends FormalParameter {
+
         private final String importName;
         private final String elementName;
 
@@ -77,7 +79,6 @@ public class DMNDecisionServiceFunctionDefinitionEvaluator implements DMNExpress
         public String getElementName() {
             return elementName;
         }
-
     }
 
     public static class DMNDSFunction extends BaseFEELFunction {
@@ -86,6 +87,7 @@ public class DMNDecisionServiceFunctionDefinitionEvaluator implements DMNExpress
         private final DMNExpressionEvaluator evaluator;
         private final DMNRuntimeEventManager eventManager;
         private final DMNResultImpl resultContext;
+        private final boolean typeCheck;
 
         public DMNDSFunction(String name, List<DSFormalParameter> parameters, DMNExpressionEvaluator evaluator, DMNRuntimeEventManager eventManager, DMNResultImpl result) {
             super(name);
@@ -93,17 +95,30 @@ public class DMNDecisionServiceFunctionDefinitionEvaluator implements DMNExpress
             this.evaluator = evaluator;
             this.eventManager = eventManager;
             this.resultContext = result;
+            typeCheck = ((DMNRuntimeImpl) eventManager.getRuntime()).performRuntimeTypeCheck(result.getModel());
         }
 
         public Object invoke(EvaluationContext ctx, Object[] params) {
             DMNContext previousContext = resultContext.getContext();
 
             DMNContext dmnContext = eventManager.getRuntime().newContext();
+            previousContext.getMetadata().asMap().forEach(dmnContext.getMetadata()::set);
             try {
+                if (params.length != parameters.size()) {
+                    MsgUtil.reportMessage(LOG,
+                                          DMNMessage.Severity.ERROR,
+                                          null,
+                                          resultContext,
+                                          null,
+                                          null,
+                                          Msg.PARAMETER_COUNT_MISMATCH_DS,
+                                          getName());
+                    return null;
+                }
                 for (int i = 0; i < params.length; i++) {
                     DSFormalParameter formalParameter = parameters.get(i);
                     if (formalParameter.getImportName() == null) {
-                        dmnContext.set(formalParameter.name, params[i]);
+                        dmnContext.set(formalParameter.name, performTypeCheckIfNeeded(params[i], i));
                     } else {
                         Map<String, Object> importNameCtx = null;
                         if (dmnContext.isDefined(formalParameter.getImportName())) {
@@ -112,7 +127,7 @@ public class DMNDecisionServiceFunctionDefinitionEvaluator implements DMNExpress
                             importNameCtx = new HashMap<>();
                             dmnContext.set(formalParameter.getImportName(), importNameCtx);
                         }
-                        importNameCtx.put(formalParameter.getElementName(), params[i]);
+                        importNameCtx.put(formalParameter.getElementName(), performTypeCheckIfNeeded(params[i], i));
                     }
                 }
                 resultContext.setContext(dmnContext);
@@ -137,13 +152,31 @@ public class DMNDecisionServiceFunctionDefinitionEvaluator implements DMNExpress
             }
         }
 
+        private Object performTypeCheckIfNeeded(Object param, int paramIndex) {
+            DSFormalParameter dsFormalParameter = parameters.get(paramIndex);
+            Object result = DMNRuntimeImpl.coerceUsingType(param,
+                                                           dsFormalParameter.type,
+                                                           typeCheck,
+                                                           (rx, tx) -> MsgUtil.reportMessage(LOG,
+                                                                                             DMNMessage.Severity.WARN,
+                                                                                             null,
+                                                                                             resultContext,
+                                                                                             null,
+                                                                                             null,
+                                                                                             Msg.PARAMETER_TYPE_MISMATCH_DS,
+                                                                                             dsFormalParameter.name,
+                                                                                             tx,
+                                                                                             MsgUtil.clipString(rx.toString(), 50)));
+            return result;
+        }
+
         @Override
         protected boolean isCustomFunction() {
             return true;
         }
 
-        public List<List<String>> getParameterNames() {
-            return Collections.singletonList(parameters.stream().map(p -> p.name).collect(Collectors.toList()));
+        public List<List<Param>> getParameters() {
+            return Collections.singletonList(parameters.stream().map(FormalParameter::asFEELParam).collect(Collectors.toList()));
         }
 
         public List<List<DMNType>> getParameterTypes() {

@@ -1,6 +1,26 @@
+/*
+ * Copyright 2019 Red Hat, Inc. and/or its affiliates.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ *
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.drools.model.view;
 
+import org.drools.model.Declaration;
+import org.drools.model.DomainClassMetadata;
 import org.drools.model.Variable;
+import org.drools.model.constraints.ReactivitySpecs;
 
 import static java.util.UUID.randomUUID;
 
@@ -9,7 +29,7 @@ public abstract class AbstractExprViewItem<T> implements ExprViewItem<T>  {
 
     private final Variable<T> var;
 
-    private String[] reactiveProps;
+    private ReactivitySpecs reactivitySpecs = ReactivitySpecs.EMPTY;
     private String[] watchedProps;
 
     private boolean queryExpression;
@@ -28,9 +48,13 @@ public abstract class AbstractExprViewItem<T> implements ExprViewItem<T>  {
         return var;
     }
 
-    public AbstractExprViewItem<T> reactOn(String... props) {
-        this.reactiveProps = props;
+    public AbstractExprViewItem<T> reactOn( String... props ) {
+        this.reactivitySpecs = new ReactivitySpecs( getDomainClassMetadata(), props );
         return this;
+    }
+
+    private DomainClassMetadata getDomainClassMetadata() {
+        return var instanceof Declaration ? (( Declaration<T> ) var).getMetadata() : null;
     }
 
     public AbstractExprViewItem<T> watch(String... props) {
@@ -43,8 +67,8 @@ public abstract class AbstractExprViewItem<T> implements ExprViewItem<T>  {
         return exprId;
     }
 
-    public String[] getReactiveProps() {
-        return reactiveProps;
+    public ReactivitySpecs getReactivitySpecs() {
+        return reactivitySpecs;
     }
 
     public String[] getWatchedProps() {

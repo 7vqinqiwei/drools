@@ -21,15 +21,13 @@ package org.kie.dmn.feel.codegen.feel11;
 import java.util.List;
 import java.util.Map;
 
-import org.drools.javaparser.JavaParser;
-import org.drools.javaparser.ast.expr.Expression;
-import org.drools.javaparser.ast.expr.LambdaExpr;
-import org.drools.javaparser.ast.expr.MethodCallExpr;
-import org.drools.javaparser.ast.expr.NameExpr;
-import org.drools.javaparser.ast.expr.ObjectCreationExpr;
-import org.drools.javaparser.ast.expr.StringLiteralExpr;
-import org.drools.javaparser.ast.type.ClassOrInterfaceType;
-import org.kie.dmn.feel.lang.FunctionDefs;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.LambdaExpr;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.ast.expr.StringLiteralExpr;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import org.kie.dmn.feel.lang.ast.BaseNode;
 import org.kie.dmn.feel.lang.ast.FunctionDefNode;
 import org.kie.dmn.feel.lang.impl.EvaluationContextImpl;
@@ -37,11 +35,14 @@ import org.kie.dmn.feel.lang.impl.FEELEventListenersManager;
 import org.kie.dmn.feel.lang.types.BuiltInType;
 import org.kie.dmn.feel.util.Msg;
 
+import static com.github.javaparser.StaticJavaParser.parseClassOrInterfaceType;
+import static com.github.javaparser.StaticJavaParser.parseExpression;
+
 public class Functions {
     public static final ClassOrInterfaceType TYPE_CUSTOM_FEEL_FUNCTION =
-            JavaParser.parseClassOrInterfaceType(CompiledCustomFEELFunction.class.getSimpleName());
+            parseClassOrInterfaceType(CompiledCustomFEELFunction.class.getSimpleName());
     private static final Expression ANONYMOUS_STRING_LITERAL = new StringLiteralExpr("<anonymous>");
-    private static final Expression EMPTY_LIST = JavaParser.parseExpression("java.util.Collections.emptyList()");
+    private static final Expression EMPTY_LIST = parseExpression("java.util.Collections.emptyList()");
 
     public static Expression external(List<String> paramNames, BaseNode body) {
         EvaluationContextImpl emptyEvalCtx =

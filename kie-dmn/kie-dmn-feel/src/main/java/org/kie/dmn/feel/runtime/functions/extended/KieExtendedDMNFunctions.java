@@ -19,7 +19,16 @@ package org.kie.dmn.feel.runtime.functions.extended;
 import java.util.stream.Stream;
 
 import org.kie.dmn.feel.runtime.FEELFunction;
-import org.kie.dmn.feel.runtime.functions.twovaluelogic.*;
+import org.kie.dmn.feel.runtime.functions.twovaluelogic.NNAllFunction;
+import org.kie.dmn.feel.runtime.functions.twovaluelogic.NNAnyFunction;
+import org.kie.dmn.feel.runtime.functions.twovaluelogic.NNCountFunction;
+import org.kie.dmn.feel.runtime.functions.twovaluelogic.NNMaxFunction;
+import org.kie.dmn.feel.runtime.functions.twovaluelogic.NNMeanFunction;
+import org.kie.dmn.feel.runtime.functions.twovaluelogic.NNMedianFunction;
+import org.kie.dmn.feel.runtime.functions.twovaluelogic.NNMinFunction;
+import org.kie.dmn.feel.runtime.functions.twovaluelogic.NNModeFunction;
+import org.kie.dmn.feel.runtime.functions.twovaluelogic.NNStddevFunction;
+import org.kie.dmn.feel.runtime.functions.twovaluelogic.NNSumFunction;
 
 /**
  * additional functions not part of the spec version 1.1
@@ -34,21 +43,8 @@ public class KieExtendedDMNFunctions {
                                                                          // additional functions not part of the spec version 1.1
                                                                          new NowFunction(),
                                                                          new TodayFunction(),
-                                                                         new AbsFunction(),
-                                                                         ModuloFunction.INSTANCE,
-                                                                         new ProductFunction(),
                                                                          new CodeFunction(),
                                                                          new InvokeFunction(),
-                                                                         SplitFunction.INSTANCE,
-                                                                         StddevFunction.INSTANCE,
-                                                                         ModeFunction.INSTANCE,
-                                                                         AbsFunction.INSTANCE,
-                                                                         SqrtFunction.INSTANCE,
-                                                                         LogFunction.INSTANCE,
-                                                                         ExpFunction.INSTANCE,
-                                                                         EvenFunction.INSTANCE,
-                                                                         OddFunction.INSTANCE,
-                                                                         MedianFunction.INSTANCE,
 
                                                                          // CQL based, two value logic functions
                                                                         NNAnyFunction.INSTANCE,
@@ -60,7 +56,8 @@ public class KieExtendedDMNFunctions {
                                                                         NNMinFunction.INSTANCE,
                                                                         NNModeFunction.INSTANCE,
                                                                         NNStddevFunction.INSTANCE,
-                                                                        NNSumFunction.INSTANCE
+                                                                        NNSumFunction.INSTANCE,
+
     };
 
     public static FEELFunction[] getFunctions() {
@@ -68,6 +65,9 @@ public class KieExtendedDMNFunctions {
     }
 
     public static <T extends FEELFunction> T getFunction(Class<T> functionClazz) {
-        return (T) Stream.of(FUNCTIONS).filter(f -> functionClazz.isAssignableFrom(f.getClass())).findFirst().get();
+        return (T) Stream.of(FUNCTIONS)
+                .filter(f -> functionClazz.isAssignableFrom(f.getClass()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Cannot find function by class " + functionClazz.getCanonicalName() + "!"));
     }
 }

@@ -36,7 +36,26 @@ public enum DMNMessageType {
 
     FAILED_VALIDATOR( "The DMN validator failed to load the validation rules. Impossible to proceed with validation.", Tag.VALIDATION, Tag.DMN_VALIDATOR ),
     FAILED_XML_VALIDATION( "DMN model failed XML schema validation", Tag.VALIDATION, Tag.DMN_VALIDATOR ),
-    FAILED_VALIDATION("DMN Validation stopped on failed validation for some DMN Model",Tag.VALIDATION,Tag.DMN_VALIDATOR);
+    FAILED_VALIDATION("DMN Validation stopped on failed validation for some DMN Model", Tag.VALIDATION, Tag.DMN_VALIDATOR),
+
+    DECISION_TABLE_ANALYSIS("DMN Validation, Decision Table Analysis", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_ANALYSIS_EMPTY("DMN Validation, Decision Table Analysis", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_ANALYSIS_ERROR("DMN Validation, Decision Table Analysis", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_GAP("DMN Validation, Decision Table Analysis, Gap Analysis", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_OVERLAP("DMN Validation, Decision Table Analysis, Overlap Analysis", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_OVERLAP_HITPOLICY_UNIQUE("DMN Validation, Decision Table Analysis, Overlap Analysis", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_OVERLAP_HITPOLICY_ANY("DMN Validation, Decision Table Analysis, Overlap Analysis", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_HITPOLICY_FIRST("DMN Validation, Decision Table Analysis, Hit Policy First considered bad practice", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_MASKED_RULE("DMN Validation, Decision Table Analysis, Masked Rule Analysis", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_MISLEADING_RULE("DMN Validation, Decision Table Analysis, Misleading Rule Analysis", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_SUBSUMPTION_RULE("DMN Validation, Decision Table Analysis, Subsumption Rule Analysis", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_CONTRACTION_RULE("DMN Validation, Decision Table Analysis, Contraction Rule Analysis", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_1STNFVIOLATION("DMN Validation, Decision Table Analysis, First Normal Form Violation", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_2NDNFVIOLATION("DMN Validation, Decision Table Analysis, Second Normal Form Violation", Tag.DECISION_TABLE_ANALYSIS, Tag.DMN_VALIDATOR),
+    DECISION_TABLE_HITPOLICY_RECOMMENDER("DMN Validation, Decision Table Analysis, Hit Policy Recommender",Tag.DECISION_TABLE_ANALYSIS,Tag.DMN_VALIDATOR),
+
+    DMNDI_MISSING_DIAGRAM( "No DMNDiagramElement is associated with the element", Tag.VALIDATION, Tag.DMN_VALIDATOR ),
+    DMNDI_UNKNOWN_REF( "The referenced element could not be resolved", Tag.VALIDATION, Tag.DMN_VALIDATOR );
 
     private final Tag[]  tags;
     private final String description;
@@ -58,7 +77,7 @@ public enum DMNMessageType {
         // message source
         DMN_CORE, DMN_VALIDATOR,
         // validation phase
-        VALIDATION, COMPILATION, RUNTIME
+        VALIDATION, COMPILATION, RUNTIME, DECISION_TABLE_ANALYSIS
     }
 
 }

@@ -26,6 +26,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -59,10 +61,11 @@ import org.kie.dmn.core.compiler.DMNCompilerImpl;
 import org.kie.dmn.core.compiler.DMNTypeRegistry;
 import org.kie.dmn.core.compiler.DMNTypeRegistryV11;
 import org.kie.dmn.core.compiler.DMNTypeRegistryV12;
+import org.kie.dmn.core.compiler.DMNTypeRegistryV13;
+import org.kie.dmn.core.pmml.DMNImportPMMLInfo;
 import org.kie.dmn.core.util.DefaultDMNMessagesManager;
 import org.kie.dmn.model.api.DMNModelInstrumentedBase;
 import org.kie.dmn.model.api.Definitions;
-import org.kie.dmn.model.v1_1.TDefinitions;
 
 public class DMNModelImpl
         implements DMNModel, DMNMessageManager, Externalizable {
@@ -77,11 +80,11 @@ public class DMNModelImpl
     private Resource resource;
     private Definitions definitions;
     
-    private Map<String, InputDataNode>              inputs       = new HashMap<>();
-    private Map<String, DecisionNode>               decisions    = new HashMap<>();
-    private Map<String, BusinessKnowledgeModelNode> bkms         = new HashMap<>();
-    private Map<String, ItemDefNode>                itemDefs     = new HashMap<>();
-    private Map<String, DecisionServiceNode> decisionServices    = new HashMap<>();
+    private Map<String, InputDataNode>              inputs       = new LinkedHashMap<>();
+    private Map<String, DecisionNode>               decisions    = new LinkedHashMap<>();
+    private Map<String, BusinessKnowledgeModelNode> bkms         = new LinkedHashMap<>();
+    private Map<String, ItemDefNode>                itemDefs     = new LinkedHashMap<>();
+    private Map<String, DecisionServiceNode> decisionServices    = new LinkedHashMap<>();
 
     // these are messages created at loading/compilation time
     private DMNMessageManager messages = new DefaultDMNMessagesManager();
@@ -105,11 +108,18 @@ public class DMNModelImpl
         importChain = new ImportChain(this);
     }
 
+    public DMNModelImpl(Definitions dmndefs, Resource resource) {
+        this(dmndefs);
+        this.setResource(resource);
+    }
+
     private void wireTypeRegistry(Definitions definitions) {
-        if (definitions instanceof TDefinitions) {
-            types = new DMNTypeRegistryV11();
+        if (definitions instanceof org.kie.dmn.model.v1_1.TDefinitions) {
+            types = new DMNTypeRegistryV11(Collections.unmodifiableMap(importAliases));
+        } else if (definitions instanceof org.kie.dmn.model.v1_2.TDefinitions) {
+            types = new DMNTypeRegistryV12(Collections.unmodifiableMap(importAliases));
         } else {
-            types = new DMNTypeRegistryV12();
+            types = new DMNTypeRegistryV13(Collections.unmodifiableMap(importAliases));
         }
     }
     
@@ -178,7 +188,7 @@ public class DMNModelImpl
 
     @Override
     public Set<InputDataNode> getInputs() {
-        return this.inputs.values().stream().collect( Collectors.toSet() );
+        return this.inputs.values().stream().collect( Collectors.toCollection(LinkedHashSet::new) );
     }
 
     public void addDecision(DecisionNode dn) {
@@ -213,7 +223,7 @@ public class DMNModelImpl
 
     @Override
     public Set<DecisionNode> getDecisions() {
-        return this.decisions.values().stream().collect(Collectors.toSet());
+        return this.decisions.values().stream().collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     @Override
@@ -258,7 +268,7 @@ public class DMNModelImpl
 
     @Override
     public Collection<DecisionServiceNode> getDecisionServices() {
-        return this.decisionServices.values().stream().collect(Collectors.toSet());
+        return this.decisionServices.values().stream().collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     public void addBusinessKnowledgeModel(BusinessKnowledgeModelNode bkm) {
@@ -285,7 +295,7 @@ public class DMNModelImpl
 
     @Override
     public Set<BusinessKnowledgeModelNode> getBusinessKnowledgeModels() {
-        return this.bkms.values().stream().collect(Collectors.toSet());
+        return this.bkms.values().stream().collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     private void collectRequiredInputs(Collection<DMNNode> deps, Set<InputDataNode> inputs) {
@@ -325,7 +335,7 @@ public class DMNModelImpl
 
     @Override
     public Set<ItemDefNode> getItemDefinitions() {
-        return this.itemDefs.values().stream().collect( Collectors.toSet() );
+        return this.itemDefs.values().stream().collect( Collectors.toCollection(LinkedHashSet::new) );
     }
 
     @Override
@@ -344,7 +354,7 @@ public class DMNModelImpl
     }
 
     @Override
-    public void addAll(List<DMNMessage> messages) {
+    public void addAll(List<? extends DMNMessage> messages) {
         this.messages.addAll( messages );
     }
 
@@ -480,6 +490,10 @@ public class DMNModelImpl
         return this.importChain.getImportChainAliases();
     }
 
+    public List<DMNModel> getImportChainDirectChildModels() {
+        return this.importChain.getImportChainDirectChildModels();
+    }
+
     private static class ImportChain {
         private final String alias;
         private final DMNModel node;
@@ -526,5 +540,28 @@ public class DMNModelImpl
             }
             return result;
         }
+
+        /**
+         * return the list of child models not including transitive ones.
+         */
+        public List<DMNModel> getImportChainDirectChildModels() {
+            return children.stream().map(chain -> chain.node).collect(Collectors.toList());
+        }
     }
+
+    @Override
+    public void addAllUnfiltered(List<? extends DMNMessage> messages) {
+        this.messages.addAllUnfiltered( messages );
+    }
+
+    private Map<String, DMNImportPMMLInfo> pmmlImportInfo = new HashMap<>();
+
+    public void addPMMLImportInfo(DMNImportPMMLInfo info) {
+        this.pmmlImportInfo.put(info.getImportName(), info);
+    }
+
+    public Map<String, DMNImportPMMLInfo> getPmmlImportInfo() {
+        return Collections.unmodifiableMap(pmmlImportInfo);
+    }
+
 }

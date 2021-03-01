@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import javax.xml.XMLConstants;
 import javax.xml.namespace.QName;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
@@ -35,6 +36,7 @@ import javax.xml.stream.XMLStreamWriter;
 import javax.xml.transform.OutputKeys;
 import javax.xml.transform.Source;
 import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.sax.SAXSource;
 import javax.xml.transform.sax.SAXTransformerFactory;
 import javax.xml.transform.stream.StreamResult;
@@ -44,10 +46,12 @@ import com.thoughtworks.xstream.io.xml.AbstractPullReader;
 import com.thoughtworks.xstream.io.xml.QNameMap;
 import com.thoughtworks.xstream.io.xml.StaxDriver;
 import com.thoughtworks.xstream.io.xml.StaxWriter;
+import com.thoughtworks.xstream.security.TypeHierarchyPermission;
 import org.kie.dmn.api.marshalling.DMNExtensionRegister;
 import org.kie.dmn.api.marshalling.v1_1.DMNMarshaller;
 import org.kie.dmn.backend.marshalling.CustomStaxReader;
 import org.kie.dmn.backend.marshalling.CustomStaxWriter;
+import org.kie.dmn.backend.marshalling.v1x.DMNXStream;
 import org.kie.dmn.model.api.DMNModelInstrumentedBase;
 import org.kie.dmn.model.api.Definitions;
 import org.kie.dmn.model.v1_1.KieDMNModelInstrumentedBase;
@@ -87,11 +91,10 @@ import org.kie.dmn.model.v1_1.TPerformanceIndicator;
 import org.kie.dmn.model.v1_1.TRelation;
 import org.kie.dmn.model.v1_1.TTextAnnotation;
 import org.kie.dmn.model.v1_1.TUnaryTests;
+import org.kie.soup.xstream.XStreamUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xml.sax.InputSource;
-
-import static org.kie.soup.commons.xstream.XStreamUtils.createTrustingXStream;
 
 public class XStreamMarshaller
         implements DMNMarshaller {
@@ -212,7 +215,9 @@ public class XStreamMarshaller
     @Deprecated
     public static String formatXml(String xml){
         try{
-           Transformer serializer= SAXTransformerFactory.newInstance().newTransformer();
+           TransformerFactory transformerFactory = SAXTransformerFactory.newInstance();
+           transformerFactory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+           Transformer serializer = transformerFactory.newTransformer();
            serializer.setOutputProperty(OutputKeys.INDENT, "yes");         
            serializer.setOutputProperty("{http://xml.apache.org/xslt}indent-amount", "2");
            Source xmlSource=new SAXSource(new InputSource(new ByteArrayInputStream(xml.getBytes())));
@@ -225,7 +230,9 @@ public class XStreamMarshaller
      }
     
     private XStream newXStream() {
-        XStream xStream = createTrustingXStream( staxDriver, Definitions.class.getClassLoader() );
+        XStream xStream = XStreamUtils.createNonTrustingXStream(staxDriver, Definitions.class.getClassLoader(), DMNXStream::from);
+        xStream.addPermission(new TypeHierarchyPermission(QName.class));
+        xStream.addPermission(new TypeHierarchyPermission(KieDMNModelInstrumentedBase.class));
         
         xStream.alias("artifact", TArtifact.class);
         xStream.alias("definitions", TDefinitions.class);
